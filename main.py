@@ -15,129 +15,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib
 matplotlib.use('TkAgg')
 from sequencer_ui import SequencerUI # Import the new SequencerUI class
-
-class Oscillator:
-    WAVEFORMS = ['sine', 'square', 'sawtooth', 'triangle']
-    
-    def __init__(self):
-        self.waveform = 'sine'
-        self.frequency = 440.0  # A4 note
-        self.amplitude = 0.5
-        self.phase = 0.0
-        self.enabled = True  # New enable/disable flag
-        # New parameters for sound design
-        self.detune = 0.0  # Detune in cents (-100 to +100)
-        self.attack = 0.1  # Attack time in seconds
-        self.decay = 0.1   # Decay time in seconds
-        self.sustain = 0.7 # Sustain level (0-1)
-        self.release = 0.3 # Release time in seconds
-        self.filter_cutoff = 1.0  # Normalized cutoff frequency (0-1)
-        self.filter_resonance = 0.0  # Filter resonance (0-1)
-        self.pan = 0.5  # Stereo panning (0 = left, 0.5 = center, 1 = right)
-        self.load_waveform_definitions()
-    
-    def load_waveform_definitions(self):
-        """Load waveform definitions from JSON file"""
-        try:
-            with open('waveform_definitions.json', 'r') as f:
-                self.waveform_definitions = json.load(f)
-        except FileNotFoundError:
-            # Default basic waveforms if file not found
-            self.waveform_definitions = {
-                "sine": {"type": "basic", "description": "Pure sine wave", "harmonics": []},
-                "square": {"type": "basic", "description": "Square wave", "harmonics": []},
-                "sawtooth": {"type": "basic", "description": "Sawtooth wave", "harmonics": []},
-                "triangle": {"type": "basic", "description": "Triangle wave", "harmonics": []}
-            }
-    
-    def apply_envelope(self, samples: np.ndarray, sample_rate: int, duration_ms: int) -> np.ndarray:
-        """Apply ADSR envelope to the samples"""
-        total_samples = len(samples)
-        attack_samples = min(int(self.attack * sample_rate), total_samples)
-        decay_samples = min(int(self.decay * sample_rate), total_samples - attack_samples)
-        release_samples = min(int(self.release * sample_rate), total_samples - attack_samples - decay_samples)
-        sustain_samples = total_samples - attack_samples - decay_samples - release_samples
-        
-        # Create envelope segments
-        envelope = np.zeros(total_samples)
-        
-        # Attack phase
-        if attack_samples > 0:
-            envelope[:attack_samples] = np.linspace(0, 1, attack_samples)
-        
-        # Decay phase
-        if decay_samples > 0:
-            decay_end = attack_samples + decay_samples
-            envelope[attack_samples:decay_end] = np.linspace(1, self.sustain, decay_samples)
-        
-        # Sustain phase
-        if sustain_samples > 0:
-            sustain_end = attack_samples + decay_samples + sustain_samples
-            envelope[attack_samples + decay_samples:sustain_end] = self.sustain
-        
-        # Release phase
-        if release_samples > 0:
-            envelope[-release_samples:] = np.linspace(self.sustain, 0, release_samples)
-        
-        return samples * envelope
-    
-    def apply_filter(self, samples: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Apply a simple lowpass filter"""
-        if self.filter_cutoff >= 1.0 and self.filter_resonance == 0:
-            return samples
-            
-        # Simple IIR lowpass filter
-        alpha = self.filter_cutoff * 0.9  # Scale cutoff to reasonable range
-        resonance = 1.0 - (self.filter_resonance * 0.99)  # Prevent instability
-        filtered = np.zeros_like(samples)
-        filtered[0] = samples[0]
-        
-        for i in range(1, len(samples)):
-            filtered[i] = (alpha * samples[i] + (1 - alpha) * filtered[i-1]) * resonance
-            
-        return filtered
-    
-    def generate_samples(self, duration_ms: int, sample_rate: int = 44100) -> np.ndarray:
-        num_samples = int(sample_rate * duration_ms / 1000)
-        t = np.linspace(0, duration_ms / 1000, num_samples, False)
-        
-        # Apply detune
-        freq = self.frequency * (2 ** (self.detune / 1200))
-        
-        # Get waveform definition
-        wave_def = self.waveform_definitions.get(self.waveform, self.waveform_definitions["sine"])
-        
-        if wave_def["type"] == "basic":
-            # Generate basic waveform
-            if self.waveform == 'sine':
-                samples = self.amplitude * np.sin(2 * np.pi * freq * t + self.phase)
-            elif self.waveform == 'square':
-                samples = self.amplitude * np.sign(np.sin(2 * np.pi * freq * t + self.phase))
-            elif self.waveform == 'sawtooth':
-                samples = self.amplitude * 2 * (freq * t - np.floor(0.5 + freq * t))
-            else:  # triangle
-                samples = self.amplitude * 2 * np.abs(2 * (freq * t - np.floor(0.5 + freq * t))) - 1
-        else:
-            # Generate custom waveform using harmonics
-            samples = np.zeros(num_samples)
-            for harmonic in wave_def["harmonics"]:
-                harmonic_freq = freq * harmonic["frequency"]
-                harmonic_amp = self.amplitude * harmonic["amplitude"]
-                samples += harmonic_amp * np.sin(2 * np.pi * harmonic_freq * t + self.phase)
-            
-            # Normalize
-            if len(wave_def["harmonics"]) > 0:
-                samples = samples / max(abs(samples.min()), abs(samples.max()))
-                samples *= self.amplitude
-        
-        # Apply envelope and effects
-        samples = self.apply_envelope(samples, sample_rate, duration_ms)
-        samples = self.apply_filter(samples, sample_rate)
-        
-        # Apply panning (will be used later in stereo conversion)
-        self.current_pan = self.pan
-        
-        return samples
+from oscillator import Oscillator # Import the Oscillator class
 
 class ChordGenerator:
     NOTE_FREQUENCIES = {
@@ -353,6 +231,7 @@ class ChordGeneratorApp:
         self.pan_vars = []
         self.enabled_vars = []
         self.solo_vars = [] # For oscillator solo states
+        self.eq_gain_vars = [] # List of lists, one list of 8 tk.DoubleVars per oscillator
         self.duration_var = tk.DoubleVar(value=1.0)
         self.octave_var = tk.IntVar(value=4)
         self.note_octave_vars = []
@@ -390,6 +269,7 @@ class ChordGeneratorApp:
         self.pan_vars.append(tk.DoubleVar(value=osc.pan))
         self.enabled_vars.append(tk.BooleanVar(value=osc.enabled))
         self.solo_vars.append(tk.BooleanVar(value=False)) # Initialize solo state for new osc
+        self.eq_gain_vars.append([tk.DoubleVar(value=0.0) for _ in range(8)]) # Initialize EQ gains for new osc
     
     def setup_gui(self):
         """Setup the main GUI layout"""
@@ -554,6 +434,22 @@ class ChordGeneratorApp:
                  variable=self.pan_vars[index],
                  orient=tk.HORIZONTAL, length=50).grid(row=0, column=5, padx=(0,1))
         
+        # EQ Controls Frame
+        eq_frame = ttk.LabelFrame(osc_frame, text="EQ", padding="1")
+        eq_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=0)
+        for i in range(8):
+            eq_band_label = f"{Oscillator.EQ_BAND_FREQUENCIES[i]}" # Hz
+            if Oscillator.EQ_BAND_FREQUENCIES[i] >= 1000:
+                eq_band_label = f"{Oscillator.EQ_BAND_FREQUENCIES[i]/1000:.0f}k"
+
+            ttk.Label(eq_frame, text=eq_band_label, width=3, anchor="center").grid(row=0, column=i, padx=1)
+            eq_scale = ttk.Scale(eq_frame, from_=-12, to=12, 
+                                 variable=self.eq_gain_vars[index][i],
+                                 orient=tk.VERTICAL, length=50)
+            eq_scale.grid(row=1, column=i, padx=1, pady=(0,1))
+            # Add a label for 0dB mark, might need better placement or a custom widget later
+            # ttk.Label(eq_frame, text="0", font=("TkSmallCaptionFont",)).grid(row=2, column=i, sticky="n")
+
         self.bind_oscillator_controls(index)
     
     def create_waveform_preview(self, parent, index):
@@ -691,6 +587,8 @@ class ChordGeneratorApp:
         self.pan_vars[index].trace_add('write', lambda *args: self.update_oscillator(index))
         self.enabled_vars[index].trace_add('write', lambda *args: self.update_oscillator(index))
         self.solo_vars[index].trace_add('write', lambda *args: self.update_oscillator(index))
+        for i in range(8):
+            self.eq_gain_vars[index][i].trace_add('write', lambda *args, i=i, idx=index: self.update_oscillator_eq(idx, i))
 
     def update_oscillator(self, index):
         """Update all oscillator parameters when controls change"""
@@ -707,6 +605,13 @@ class ChordGeneratorApp:
         osc.filter_resonance = self.resonance_vars[index].get()
         osc.pan = self.pan_vars[index].get()
     
+    def update_oscillator_eq(self, osc_index, eq_band_index):
+        """Update a specific EQ band for an oscillator."""
+        if osc_index < len(self.chord_generator.oscillators) and eq_band_index < 8:
+            osc = self.chord_generator.oscillators[osc_index]
+            osc.eq_gains[eq_band_index] = self.eq_gain_vars[osc_index][eq_band_index].get()
+            # print(f"Osc {osc_index}, EQ Band {eq_band_index} gain: {osc.eq_gains[eq_band_index]}") # For debugging
+
     def preview_chord(self):
         """Generate and play the current chord"""
         try:
@@ -1011,10 +916,18 @@ class ChordGeneratorApp:
             for var_list in [self.wave_vars, self.amp_vars, self.detune_vars,
                            self.attack_vars, self.decay_vars, self.sustain_vars,
                            self.release_vars, self.cutoff_vars, self.resonance_vars,
-                           self.pan_vars, self.enabled_vars, self.solo_vars]:
+                           self.pan_vars, self.enabled_vars, self.solo_vars, self.eq_gain_vars]:
                 if index < len(var_list):
-                    del var_list[index]
-            
+                    # Check if var_list is the list of lists for EQ gains
+                    if var_list is self.eq_gain_vars: 
+                        if index < len(var_list): # Redundant check, but safe
+                            del var_list[index]
+                    elif isinstance(var_list, list) and len(var_list) > 0 and isinstance(var_list[0], tk.Variable):
+                        # This handles lists of tk.Variables like self.wave_vars etc.
+                        if index < len(var_list): 
+                            del var_list[index]
+                    # else: it's an empty list or not a list of tk.Variable, skip (should not happen for these vars)
+
             # Remove visualization
             if index in self.waveform_plots:
                 del self.waveform_plots[index]
