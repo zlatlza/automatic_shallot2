@@ -296,7 +296,7 @@ class ChordGenerator:
 class ChordGeneratorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Automatic Shallot v0.5 - Custom Chords")
+        self.root.title("Automatic Shallot v0.4")
         self.root.geometry("600x480") # Set initial window size
         
         # Set minimum window size and configure grid
