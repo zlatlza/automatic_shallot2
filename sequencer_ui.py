@@ -173,7 +173,7 @@ class SequencerUI:
                     note_match = note_regex_final.match(note_part_str)
                     if not note_match:
                         messagebox.showerror("Parsing Error", 
-                                             f"Line {line_num}, Note entry '{note_part_str}': Invalid format.\nExpected: 'P+/-O[OscName]' (e.g., C+0[osc1] or G#-1[Master/All])")
+                                             f"Line {line_num}, Note entry '{note_part_str}': Invalid format.\nExpected: 'P+/-O[OscName]' (e.g., C+0[osc1] or G#-1[master])")
                         return
                     
                     pitch_str, octave_adjust_str, osc_name_str = note_match.groups()
@@ -264,7 +264,7 @@ class SequencerUI:
                 oct_adj = note_data['octave_adjust']
                 osc_idx = note_data.get('osc_idx', -1) 
                 
-                osc_display_name = "Master/All"
+                osc_display_name = "master"
                 if 0 <= osc_idx < len(self.app.chord_generator.oscillators):
                     osc_display_name = self.app.chord_generator.oscillators[osc_idx].name
                 elif osc_idx != -1: # Should ideally not happen if data is clean

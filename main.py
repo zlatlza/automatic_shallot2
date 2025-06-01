@@ -923,7 +923,7 @@ class ChordGeneratorApp:
             else:
                 # If idx is out of bounds (but not -1), it implies inconsistent data.
                 # Set to Master/All and correct the underlying data.
-                display_name_for_combo = "Master/All"
+                display_name_for_combo = "master"
                 if i < len(self.custom_chord_notes_data):
                     self.custom_chord_notes_data[i]['osc_idx'] = -1
             
@@ -951,7 +951,7 @@ class ChordGeneratorApp:
             elif param_type == 'octave_adjust':
                  self.custom_chord_notes_data[note_idx]['octave_adjust'] = new_value
             elif param_type == 'osc_idx':
-                if new_value == "Master/All":
+                if new_value == "master":
                     self.custom_chord_notes_data[note_idx]['osc_idx'] = -1
                 else:
                     found_osc_idx = -1
@@ -964,7 +964,7 @@ class ChordGeneratorApp:
                     else:
                         # This case should ideally not happen if combobox is populated correctly
                         # and names are unique (which they should be if renaming is managed well).
-                        print(f"Warning: Oscillator name '{new_value}' not found. Defaulting to Master/All.")
+                        print(f"Warning: Oscillator name '{new_value}' not found. Defaulting to master")
                         self.custom_chord_notes_data[note_idx]['osc_idx'] = -1
                         # Consider re-setting the combobox to 'Master/All' visually if possible
             
