@@ -297,10 +297,9 @@ class ChordGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Automatic Shallot v0.4")
-        self.root.geometry("600x480") # Set initial window size
+        self.root.geometry("887x444")
         
-        # Set minimum window size and configure grid
-        self.root.minsize(600, 480) # Set minsize to the target
+        self.root.minsize(600, 400)
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
         
@@ -324,7 +323,7 @@ class ChordGeneratorApp:
         self.pygame = pygame # Make pygame accessible for SequencerUI if it needs it
         self.np = np # Make numpy accessible for SequencerUI if it needs it
         pygame.init()
-        pygame.mixer.init(frequency=44100, size=-16, channels=2)
+        self.pygame.mixer.init(frequency=44100, size=-16, channels=2)
         
         # Initialize control variables
         self.init_control_variables()
@@ -332,6 +331,10 @@ class ChordGeneratorApp:
         # Setup GUI
         self.setup_gui()
         
+        # Bind resize event
+        self.root.bind("<Configure>", self._on_main_window_configure)
+        self._last_reported_size = "" # To avoid spamming console for non-size changes
+
         # Update initial waveform previews
         for i in range(len(self.chord_generator.oscillators)):
             self.update_waveform_preview(i)
@@ -403,33 +406,32 @@ class ChordGeneratorApp:
         top_controls_outer_frame.grid_columnconfigure(1, weight=1) # Master output frame takes space
         top_controls_outer_frame.grid_columnconfigure(2, weight=0) # Export button fixed size
 
-        mode_frame = ttk.LabelFrame(top_controls_outer_frame, text="Sound Mode", padding="5")
-        mode_frame.grid(row=0, column=0, sticky="ew", padx=(0,5), pady=2)
-        # mode_frame.grid_columnconfigure(1, weight=1) # Already configured by parent grid
+        mode_frame = ttk.LabelFrame(top_controls_outer_frame, text="Mode", padding="2")
+        mode_frame.grid(row=0, column=0, sticky="ew", padx=(0,2), pady=1)
         
-        ttk.Label(mode_frame, text="Mode:").grid(row=0, column=0, padx=5)
+        ttk.Label(mode_frame, text="Mode:").grid(row=0, column=0, padx=(2,1))
         mode_menu = ttk.Combobox(mode_frame, textvariable=self.sound_mode_var,
-                                values=ChordGenerator.SOUND_MODES, width=10) # Adjusted width
-        mode_menu.grid(row=0, column=1, padx=5, sticky="ew")
+                                values=ChordGenerator.SOUND_MODES, width=8)
+        mode_menu.grid(row=0, column=1, padx=(1,2), sticky="ew")
         mode_menu.bind('<<ComboboxSelected>>', self.update_sound_mode)
 
         # Master Output Frame
-        master_output_frame = ttk.LabelFrame(top_controls_outer_frame, text="Master Output", padding="5")
-        master_output_frame.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+        master_output_frame = ttk.LabelFrame(top_controls_outer_frame, text="Master", padding="2")
+        master_output_frame.grid(row=0, column=1, sticky="ew", padx=2, pady=1)
         master_output_frame.grid_columnconfigure(1, weight=1) # Scale expands
 
-        ttk.Label(master_output_frame, text="Vol:").grid(row=0, column=0, padx=2, pady=2, sticky="w")
+        ttk.Label(master_output_frame, text="Vol:").grid(row=0, column=0, padx=(2,1), pady=1, sticky="w")
         master_vol_scale = ttk.Scale(master_output_frame, from_=0, to=1, 
                                      variable=self.master_volume_var, 
-                                     orient=tk.HORIZONTAL, length=100)
-        master_vol_scale.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+                                     orient=tk.HORIZONTAL, length=70)
+        master_vol_scale.grid(row=0, column=1, padx=1, pady=1, sticky="ew")
 
         master_mute_cb = ttk.Checkbutton(master_output_frame, text="Mute", 
                                        variable=self.master_mute_var)
-        master_mute_cb.grid(row=0, column=2, padx=5, pady=2)
+        master_mute_cb.grid(row=0, column=2, padx=(2,2), pady=1)
         
-        export_btn = ttk.Button(top_controls_outer_frame, text="Export WAV", command=self.export_wav)
-        export_btn.grid(row=0, column=2, padx=5, pady=2, sticky="e")
+        export_btn = ttk.Button(top_controls_outer_frame, text="Export", command=self.export_wav)
+        export_btn.grid(row=0, column=2, padx=(2,0), pady=1, sticky="e")
         
         # Create scrollable canvas for oscillators
         canvas = tk.Canvas(left_frame)
@@ -476,120 +478,102 @@ class ChordGeneratorApp:
     
     def create_oscillator_frame(self, parent, index):
         """Create a frame for a single oscillator"""
-        osc_frame = ttk.LabelFrame(parent, text=f"Oscillator {index + 1}", padding="2")
-        osc_frame.grid(row=index, column=0, sticky="ew", padx=2, pady=1)
+        osc_frame = ttk.LabelFrame(parent, text=f"Osc {index + 1}", padding="1")
+        osc_frame.grid(row=index, column=0, sticky="ew", padx=1, pady=1)
         osc_frame.grid_columnconfigure(1, weight=1)
         
-        # Add remove button
         if len(self.chord_generator.oscillators) > 1:
             remove_btn = ttk.Button(osc_frame, text="X",
                                   command=lambda i=index: self.remove_oscillator(i),
-                                  width=3)
-            remove_btn.grid(row=0, column=2, padx=2, pady=1, sticky="ne")
+                                  width=2)
+            remove_btn.grid(row=0, column=2, padx=1, pady=0, sticky="ne")
         
-        # Add waveform preview canvas
         self.create_waveform_preview(osc_frame, index)
         
-        # Rest of the controls
         basic_frame = ttk.Frame(osc_frame)
-        basic_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=1)
+        basic_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=0)
         
-        # Enable/Disable checkbox
-        enable_cb = ttk.Checkbutton(basic_frame, text="Enable",
+        enable_cb = ttk.Checkbutton(basic_frame, text="On",
                                   variable=self.enabled_vars[index],
                                   command=lambda i=index: self.update_oscillator(i))
-        enable_cb.grid(row=0, column=0, padx=2)
+        enable_cb.grid(row=0, column=0, padx=(1,0))
         
-        # Waveform with tooltip
-        ttk.Label(basic_frame, text="Wave:").grid(row=0, column=1, padx=1)
+        ttk.Label(basic_frame, text="Wave:").grid(row=0, column=1, padx=(2,0))
         wave_menu = ttk.Combobox(basic_frame, textvariable=self.wave_vars[index],
                                 values=list(self.chord_generator.oscillators[0].waveform_definitions.keys()),
-                                width=10)
-        wave_menu.grid(row=0, column=2, padx=1)
+                                width=8)
+        wave_menu.grid(row=0, column=2, padx=(0,1))
         wave_menu.bind('<<ComboboxSelected>>', lambda e, i=index: self.update_waveform_preview(i))
         
-        # Create tooltip for waveform description
         self.create_waveform_tooltip(wave_menu, index)
         
-        # Solo Button
         solo_cb = ttk.Checkbutton(basic_frame, text="Solo", 
                                   variable=self.solo_vars[index],
                                   command=lambda i=index: self.toggle_solo(i))
-        solo_cb.grid(row=0, column=3, padx=2) # Next to Enable
+        solo_cb.grid(row=0, column=3, padx=1)
         
-        # Amplitude - Shifted one column to the right due to Solo button
-        ttk.Label(basic_frame, text="Amp:").grid(row=0, column=4, padx=1) # Was column 3
+        ttk.Label(basic_frame, text="Amp:").grid(row=0, column=4, padx=(2,0))
         amp_scale = ttk.Scale(basic_frame, from_=0, to=1,
                              variable=self.amp_vars[index],
-                             orient=tk.HORIZONTAL, length=80)
-        amp_scale.grid(row=0, column=5, padx=1) # Was column 4
+                             orient=tk.HORIZONTAL, length=50)
+        amp_scale.grid(row=0, column=5, padx=(0,1))
         
-        # Detune - Shifted one column to the right
-        ttk.Label(basic_frame, text="Det:").grid(row=0, column=6, padx=1) # Was column 5
+        ttk.Label(basic_frame, text="Det:").grid(row=0, column=6, padx=(2,0))
         detune_scale = ttk.Scale(basic_frame, from_=-100, to=100,
                                 variable=self.detune_vars[index],
-                                orient=tk.HORIZONTAL, length=80)
-        detune_scale.grid(row=0, column=7, padx=1) # Was column 6
+                                orient=tk.HORIZONTAL, length=50)
+        detune_scale.grid(row=0, column=7, padx=(0,1))
         
-        # ADSR Controls
         adsr_frame = ttk.LabelFrame(osc_frame, text="ADSR", padding="1")
-        adsr_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=1)
+        adsr_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=0)
         
         adsr_labels = ['A', 'D', 'S', 'R']
         adsr_vars = [self.attack_vars[index], self.decay_vars[index],
                     self.sustain_vars[index], self.release_vars[index]]
         
         for i, (label, var) in enumerate(zip(adsr_labels, adsr_vars)):
-            ttk.Label(adsr_frame, text=label).grid(row=0, column=i*2, padx=1)
+            ttk.Label(adsr_frame, text=label).grid(row=0, column=i*2, padx=0)
             ttk.Scale(adsr_frame, from_=0, to=2 if label != 'S' else 1,
-                     variable=var, orient=tk.HORIZONTAL, length=60).grid(row=0, column=i*2+1, padx=1)
+                     variable=var, orient=tk.HORIZONTAL, length=35).grid(row=0, column=i*2+1, padx=(0,1))
         
-        # Filter and Pan Controls
         filter_frame = ttk.Frame(osc_frame)
-        filter_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=1)
+        filter_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=0)
         
-        ttk.Label(filter_frame, text="Cut:").grid(row=0, column=0, padx=1)
+        ttk.Label(filter_frame, text="Cut:").grid(row=0, column=0, padx=(1,0))
         ttk.Scale(filter_frame, from_=0, to=1,
                  variable=self.cutoff_vars[index],
-                 orient=tk.HORIZONTAL, length=80).grid(row=0, column=1, padx=1)
+                 orient=tk.HORIZONTAL, length=50).grid(row=0, column=1, padx=(0,1))
         
-        ttk.Label(filter_frame, text="Res:").grid(row=0, column=2, padx=1)
+        ttk.Label(filter_frame, text="Res:").grid(row=0, column=2, padx=(2,0))
         ttk.Scale(filter_frame, from_=0, to=1,
                  variable=self.resonance_vars[index],
-                 orient=tk.HORIZONTAL, length=80).grid(row=0, column=3, padx=1)
+                 orient=tk.HORIZONTAL, length=50).grid(row=0, column=3, padx=(0,1))
         
-        ttk.Label(filter_frame, text="Pan:").grid(row=0, column=4, padx=1)
+        ttk.Label(filter_frame, text="Pan:").grid(row=0, column=4, padx=(2,0))
         ttk.Scale(filter_frame, from_=0, to=1,
                  variable=self.pan_vars[index],
-                 orient=tk.HORIZONTAL, length=80).grid(row=0, column=5, padx=1)
+                 orient=tk.HORIZONTAL, length=50).grid(row=0, column=5, padx=(0,1))
         
-        # Bind all control changes
         self.bind_oscillator_controls(index)
     
     def create_waveform_preview(self, parent, index):
         """Create a small waveform preview canvas"""
-        # Create matplotlib figure
-        fig = Figure(figsize=(3, 1), dpi=100)
+        fig = Figure(figsize=(1.2, 0.4), dpi=70)
         ax = fig.add_subplot(111)
         
-        # Remove axes
         ax.set_xticks([])
         ax.set_yticks([])
         
-        # Create initial waveform plot
         t = np.linspace(0, 1, 1000)
         y = np.sin(2 * np.pi * t)
         self.waveform_plots[index] = ax.plot(t, y)[0]
         
-        # Set axis limits
         ax.set_ylim(-1.1, 1.1)
         
-        # Create canvas
         canvas = FigureCanvasTkAgg(fig, master=parent)
         canvas.draw()
-        canvas.get_tk_widget().grid(row=0, column=0, columnspan=2, padx=2, pady=1, sticky="ew")
+        canvas.get_tk_widget().grid(row=0, column=0, columnspan=2, padx=1, pady=0, sticky="ew")
         
-        # Store canvas for updates
         self.waveform_canvases[index] = canvas
     
     def update_waveform_preview(self, index):
@@ -598,7 +582,6 @@ class ChordGeneratorApp:
         osc = self.chord_generator.oscillators[index]
         wave_def = osc.waveform_definitions.get(waveform, osc.waveform_definitions["sine"])
         
-        # Generate preview waveform
         t = np.linspace(0, 1, 1000)
         if wave_def["type"] == "basic":
             if waveform == 'sine':
@@ -616,7 +599,6 @@ class ChordGeneratorApp:
             if len(wave_def["harmonics"]) > 0:
                 y = y / max(abs(y.min()), abs(y.max()))
         
-        # Update plot
         self.waveform_plots[index].set_ydata(y)
         self.waveform_canvases[index].draw()
     
@@ -655,53 +637,43 @@ class ChordGeneratorApp:
     def create_chord_frame(self, parent):
         """Create the chord control frame"""
         chord_frame = ttk.LabelFrame(parent, text="Chord Settings", padding="2")
-        chord_frame.grid_columnconfigure(1, weight=1)
-        chord_frame.grid_columnconfigure(3, weight=1)
+        chord_frame.grid_columnconfigure(1, weight=0)
+        chord_frame.grid_columnconfigure(3, weight=0)
+        chord_frame.grid_columnconfigure(5, weight=0)
+        chord_frame.grid_columnconfigure(7, weight=0)
         
-        # Root note and chord type selection
-        ttk.Label(chord_frame, text="Root:").grid(row=0, column=0, padx=2, pady=1)
+        ttk.Label(chord_frame, text="Root:").grid(row=0, column=0, padx=(2,0), pady=1)
         root_menu = ttk.Combobox(chord_frame, textvariable=self.root_var,
                                 values=list(ChordGenerator.NOTE_FREQUENCIES.keys()),
-                                width=3)
-        root_menu.grid(row=0, column=1, padx=2, pady=1)
+                                width=2)
+        root_menu.grid(row=0, column=1, padx=(0,1), pady=1)
         
-        # Octave control
-        ttk.Label(chord_frame, text="Oct:").grid(row=0, column=2, padx=2, pady=1)
+        ttk.Label(chord_frame, text="Oct:").grid(row=0, column=2, padx=(2,0), pady=1)
         octave_spin = ttk.Spinbox(chord_frame, from_=0, to=8,
                                  textvariable=self.octave_var,
-                                 width=2)
-        octave_spin.grid(row=0, column=3, padx=2, pady=1)
+                                 width=1)
+        octave_spin.grid(row=0, column=3, padx=(0,1), pady=1)
         
-        # Chord type with tooltip
-        ttk.Label(chord_frame, text="Type:").grid(row=0, column=4, padx=2, pady=1)
+        ttk.Label(chord_frame, text="Type:").grid(row=0, column=4, padx=(2,0), pady=1)
         self.type_menu = ttk.Combobox(chord_frame, textvariable=self.type_var,
                                      values=list(self.chord_generator.chord_definitions.keys()),
-                                     width=10)
-        self.type_menu.grid(row=0, column=5, padx=2, pady=1)
+                                     width=8)
+        self.type_menu.grid(row=0, column=5, padx=(0,1), pady=1)
         
-        # Create tooltip for chord description
-        self.chord_tooltip = None
-        self.type_menu.bind('<<ComboboxSelected>>', self.update_chord_tooltip)
-        self.type_menu.bind('<Enter>', self.show_chord_tooltip)
-        self.type_menu.bind('<Leave>', self.hide_chord_tooltip)
-        
-        # Duration control
-        ttk.Label(chord_frame, text="Beats:").grid(row=0, column=6, padx=2, pady=1)
+        ttk.Label(chord_frame, text="Beats:").grid(row=0, column=6, padx=(2,0), pady=1)
         duration_spin = ttk.Spinbox(chord_frame, from_=0.25, to=8,
                                   increment=0.25,
                                   textvariable=self.duration_var,
-                                  width=4)
-        duration_spin.grid(row=0, column=7, padx=2, pady=1)
-        
-        # Frame for individual note octave controls (renamed and enhanced)
-        self.custom_notes_frame = ttk.LabelFrame(chord_frame, text="Chord Notes", padding="2")
-        self.custom_notes_frame.grid(row=1, column=0, columnspan=8, sticky="ew", padx=2, pady=5)
-        
-        self.update_custom_chord_note_ui() # Initial setup
+                                  width=3)
+        duration_spin.grid(row=0, column=7, padx=(0,1), pady=1)
 
-        # Add Note Button
-        add_note_btn = ttk.Button(chord_frame, text="Add Note (+)", command=self.add_note_to_custom_chord)
-        add_note_btn.grid(row=2, column=0, columnspan=8, pady=5)
+        self.custom_notes_frame = ttk.LabelFrame(chord_frame, text="Notes", padding="1")
+        self.custom_notes_frame.grid(row=1, column=0, columnspan=8, sticky="ew", padx=1, pady=(2,1))
+        
+        self.update_custom_chord_note_ui()
+
+        add_note_btn = ttk.Button(chord_frame, text="Add Note", command=self.add_note_to_custom_chord)
+        add_note_btn.grid(row=2, column=0, columnspan=8, pady=(1,2))
 
         return chord_frame
     
@@ -929,15 +901,15 @@ class ChordGeneratorApp:
         
         # If canvas and content frame don't exist, create them within self.custom_notes_frame
         if not self.custom_notes_canvas:
-            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=110) # Explicit height for the canvas
+            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=90)
             h_scrollbar = ttk.Scrollbar(self.custom_notes_frame, orient=tk.HORIZONTAL, command=self.custom_notes_canvas.xview)
             self.custom_notes_canvas.configure(xscrollcommand=h_scrollbar.set)
             
             self.custom_notes_content_frame = ttk.Frame(self.custom_notes_canvas)
             self.custom_notes_canvas.create_window((0, 0), window=self.custom_notes_content_frame, anchor="nw")
 
-            self.custom_notes_canvas.pack(side=tk.TOP, fill=tk.X, expand=True, padx=2, pady=2)
-            h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X, padx=2, pady=2)
+            self.custom_notes_canvas.pack(side=tk.TOP, fill=tk.X, expand=True, padx=1, pady=1)
+            h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X, padx=1, pady=1)
             
             self.custom_notes_content_frame.bind("<Configure>", 
                 lambda e: self.custom_notes_canvas.configure(scrollregion=self.custom_notes_canvas.bbox("all")))
@@ -953,36 +925,32 @@ class ChordGeneratorApp:
         
         for i, note_data in enumerate(self.custom_chord_notes_data):
             # Each note_ui_frame is now created inside self.custom_notes_content_frame
-            note_ui_frame = ttk.Frame(self.custom_notes_content_frame, borderwidth=1, relief="sunken", padding=2)
+            note_ui_frame = ttk.Frame(self.custom_notes_content_frame, borderwidth=1, relief="sunken", padding=1)
             self.custom_chord_notes_ui_frames.append(note_ui_frame)
-            note_ui_frame.pack(side=tk.LEFT, padx=3, pady=3, fill=tk.Y) # Pack horizontally
+            note_ui_frame.pack(side=tk.LEFT, padx=2, pady=1, fill=tk.Y)
 
-            ttk.Label(note_ui_frame, text=f"N{i+1}").pack(side=tk.TOP, pady=(0,2)) # Compact label
+            ttk.Label(note_ui_frame, text=f"N{i+1}").pack(side=tk.TOP, pady=(0,1))
             
-            # Pitch Combobox
             pitch_var = tk.StringVar(value=note_data['pitch'])
             self.note_pitch_vars.append(pitch_var)
-            pitch_combo = ttk.Combobox(note_ui_frame, textvariable=pitch_var, values=all_note_names, width=4)
-            pitch_combo.pack(side=tk.TOP, pady=2)
+            pitch_combo = ttk.Combobox(note_ui_frame, textvariable=pitch_var, values=all_note_names, width=3)
+            pitch_combo.pack(side=tk.TOP, pady=1)
             pitch_combo.bind('<<ComboboxSelected>>', lambda e, idx=i, pv=pitch_var: self.on_custom_note_param_change(idx, 'pitch', pv.get()))
             pitch_combo.bind('<FocusOut>', lambda e, idx=i, pv=pitch_var: self.on_custom_note_param_change(idx, 'pitch', pv.get()))
 
-            # Octave Adjustment Spinbox
             octave_var = tk.IntVar(value=note_data['octave_adjust'])
             self.note_octave_vars.append(octave_var)
-            octave_spin = ttk.Spinbox(note_ui_frame, from_=-3, to=3, increment=1, textvariable=octave_var, width=3)
-            octave_spin.pack(side=tk.TOP, pady=2)
+            octave_spin = ttk.Spinbox(note_ui_frame, from_=-3, to=3, increment=1, textvariable=octave_var, width=2)
+            octave_spin.pack(side=tk.TOP, pady=1)
             octave_spin.configure(command=lambda v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
-            # For spinbox, direct command is usually enough, but FocusOut and Return can be added for robustness if needed
             octave_spin.bind('<FocusOut>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
             octave_spin.bind('<Return>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
 
-            # Remove Note Button
-            remove_btn = ttk.Button(note_ui_frame, text="-", width=2, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
-            remove_btn.pack(side=tk.TOP, pady=2)
+            remove_btn = ttk.Button(note_ui_frame, text="-", width=1, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
+            remove_btn.pack(side=tk.TOP, pady=1)
         
         # After repopulating, update the scrollregion again
-        self.custom_notes_content_frame.update_idletasks() # Ensure layout is calculated
+        self.custom_notes_content_frame.update_idletasks()
         self.custom_notes_canvas.configure(scrollregion=self.custom_notes_canvas.bbox("all"))
 
     def on_custom_note_param_change(self, note_idx: int, param_type: str, new_value):
@@ -1090,6 +1058,18 @@ class ChordGeneratorApp:
         
         # Sound might need an immediate update if a preview is desired on solo click
         # For now, sound generation functions will read the current solo states when called.
+
+    def _on_main_window_configure(self, event):
+        """Called when the main window is resized or its configuration changes."""
+        # Check if the event is for the root window itself, not a child widget if event propagates
+        if event.widget == self.root:
+            current_width = self.root.winfo_width()
+            current_height = self.root.winfo_height()
+            size_str = f"Window Resized to: {current_width}x{current_height}"
+            # Only print if the size actually changed to reduce console spam from other configure events
+            if size_str != self._last_reported_size:
+                print(size_str)
+                self._last_reported_size = size_str
 
 if __name__ == "__main__":
     root = tk.Tk()

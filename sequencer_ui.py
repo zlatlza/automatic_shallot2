@@ -47,41 +47,40 @@ class SequencerUI:
 
     def _setup_gui(self):
         # Sequencer Controls Frame
-        seq_controls_frame = ttk.LabelFrame(self.master_frame, text="Sequencer", padding="5")
-        seq_controls_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5) # Adjusted row from 1
+        seq_controls_frame = ttk.LabelFrame(self.master_frame, text="Sequencer", padding="2")
+        seq_controls_frame.grid(row=0, column=0, sticky="ew", padx=2, pady=(2,1))
         seq_controls_frame.grid_columnconfigure(1, weight=1)
         
-        ttk.Label(seq_controls_frame, text="BPM:").grid(row=0, column=0, padx=2, pady=1)
+        ttk.Label(seq_controls_frame, text="BPM:").grid(row=0, column=0, padx=(2,1), pady=1)
         bpm_spin = ttk.Spinbox(seq_controls_frame, from_=40, to=300,
-                              textvariable=self.bpm_var, width=4)
-        bpm_spin.grid(row=0, column=1, padx=2, pady=1)
+                              textvariable=self.bpm_var, width=3)
+        bpm_spin.grid(row=0, column=1, padx=(1,2), pady=1)
 
         # Sequence Display Text Area
-        self.sequence_text = tk.Text(self.master_frame, height=6, width=50)
-        self.sequence_text.grid(row=1, column=0, sticky="ew", padx=5, pady=5) # Adjusted row from 2
+        self.sequence_text = tk.Text(self.master_frame, height=5, width=40)
+        self.sequence_text.grid(row=1, column=0, sticky="ew", padx=2, pady=1)
 
         # "Apply Text Changes" Button
         apply_text_btn = ttk.Button(self.master_frame, text="Apply", 
                                     command=self._apply_text_to_sequence)
-        apply_text_btn.grid(row=2, column=0, sticky="ew", padx=5, pady=(0,5)) # Below text area
+        apply_text_btn.grid(row=2, column=0, sticky="ew", padx=2, pady=(1,2))
 
         # Play Controls Frame
         play_controls_frame = ttk.Frame(self.master_frame)
-        play_controls_frame.grid(row=3, column=0, sticky="ew", padx=5, pady=5) # Adjusted row from 2 to 3
+        play_controls_frame.grid(row=3, column=0, sticky="ew", padx=2, pady=1)
         
         buttons = [
-            # "Preview Chord" is app-level, not sequencer specific for adding
             ("Preview Chord", self.app.preview_chord),
-            ("Add to Sequence", self.add_to_sequence),
-            ("Play Sequence", self.play_sequence),
+            ("Add to Seq", self.add_to_sequence),
+            ("Play Seq", self.play_sequence),
             ("Stop", self.stop_sequence),
-            ("Clear Sequence", self.clear_sequence)
+            ("Clear Seq", self.clear_sequence)
         ]
         
         for i, (text, command) in enumerate(buttons):
             btn = ttk.Button(play_controls_frame, text=text, command=command)
-            btn.grid(row=0, column=i, padx=5, pady=5)
-            play_controls_frame.grid_columnconfigure(i, weight=1) # Make buttons expand
+            btn.grid(row=0, column=i, padx=2, pady=1)
+            play_controls_frame.grid_columnconfigure(i, weight=1)
 
     def _update_tempo(self, *args):
         try:
