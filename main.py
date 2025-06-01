@@ -16,6 +16,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 from sequencer_ui import SequencerUI # Import the new SequencerUI class
 from oscillator import Oscillator # Import the Oscillator class
+from oscillator_renamer import OscillatorRenamerDialog # Import the new dialog
 
 class ChordGenerator:
     NOTE_FREQUENCIES = {
@@ -28,15 +29,17 @@ class ChordGenerator:
     
     def __init__(self):
         self.oscillators = []
-        self.add_oscillator()  # Start with one oscillator
         self.sound_mode = 'stereo'
         pygame.mixer.init(frequency=44100, size=-16, channels=2)
         self.load_chord_definitions()
     
     def add_oscillator(self):
-        """Add a new oscillator"""
-        self.oscillators.append(Oscillator())
-        return len(self.oscillators) - 1  # Return new oscillator index
+        """Add a new oscillator and assign a default name."""
+        new_osc = Oscillator()
+        # Name is set based on the current count + 1 BEFORE appending
+        new_osc.name = f"osc{len(self.oscillators) + 1}"
+        self.oscillators.append(new_osc)
+        return len(self.oscillators) - 1 # Return index of the newly added oscillator
     
     def remove_oscillator(self, index):
         """Remove an oscillator by index"""
@@ -180,7 +183,7 @@ class ChordGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Automatic Shallot v0.4")
-        self.root.geometry("887x444")
+        self.root.geometry("887x468")
         
         self.root.minsize(600, 400)
         self.root.grid_rowconfigure(0, weight=1)
@@ -200,13 +203,18 @@ class ChordGeneratorApp:
         
         # Initialize audio components
         self.chord_generator = ChordGenerator()
-        # self.sequencer = Sequencer() # Sequencer logic now in SequencerUI
+        # Add initial oscillator(s) here if desired for a new session
+        if not self.chord_generator.oscillators: # Add one if the list is empty
+             self.chord_generator.add_oscillator()
         
         # Audio setup
         self.pygame = pygame # Make pygame accessible for SequencerUI if it needs it
         self.np = np # Make numpy accessible for SequencerUI if it needs it
         pygame.init()
         self.pygame.mixer.init(frequency=44100, size=-16, channels=2)
+        
+        # Setup Menu
+        self.setup_menu()
         
         # Initialize control variables
         self.init_control_variables()
@@ -222,8 +230,26 @@ class ChordGeneratorApp:
         for i in range(len(self.chord_generator.oscillators)):
             self.update_waveform_preview(i)
     
+    def setup_menu(self):
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Rename Oscillators...", command=self.open_rename_oscillators_dialog)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
+        # Potentially other menus like Edit, View, Help can be added here
+
+    def open_rename_oscillators_dialog(self):
+        dialog = OscillatorRenamerDialog(self)
+        self.root.wait_window(dialog) # Wait for the dialog to close
+
     def init_control_variables(self):
         """Initialize all control variables"""
+        # Oscillator._osc_count = 0 # REMOVED: No longer managing count here or in Oscillator class globally for naming
+
         self.wave_vars = []
         self.amp_vars = []
         self.detune_vars = []
@@ -365,75 +391,40 @@ class ChordGeneratorApp:
     def create_oscillator_frame(self, parent, index):
         """Create a frame for a single oscillator"""
         osc = self.chord_generator.oscillators[index]
+        # Use the oscillator's name for the LabelFrame text
         osc_frame = ttk.LabelFrame(parent, text=osc.name, padding="1")
         osc_frame.grid(row=index, column=0, sticky="ew", padx=1, pady=1)
-        osc_frame.grid_columnconfigure(1, weight=1)
+        osc_frame.grid_columnconfigure(1, weight=1) # Main content area
+        osc_frame.grid_columnconfigure(0, weight=1) # Ensure label frame text area also expands
 
-        # --- Editable Name Functionality ---
-        name_var = tk.StringVar(value=osc.name)
-        name_label = ttk.Label(osc_frame, textvariable=name_var, font=('TkDefaultFont', 9, 'bold'))
-        name_entry = ttk.Entry(osc_frame, textvariable=name_var)
+        # The rest of the frame content (preview, controls) starts from row 0 within this osc_frame
+        # This means the previous logic of passing start_row to create_waveform_preview might need adjustment
+        # if we are not putting an editable name label inside anymore.
 
-        def make_name_editable(event):
-            # Replace label with entry on the frame\'s title area (using grid_forget/grid)
-            # This is a bit tricky for LabelFrame text. A common approach is to
-            # place the label/entry *inside* the LabelFrame and manage its appearance.
-            # For simplicity here, we\'ll place a clickable label on top of the LabelFrame\'s text.
-            # A more robust solution might involve a custom widget or overlaying.
-
-            # Instead of modifying LabelFrame text directly, we add a new label widget for the name
-            # and an entry for editing. We\'ll manage these separately from the `text` option of LabelFrame.
-            # The LabelFrame\'s initial text will be static (e.g., "Oscillator Details").
-            # Let's adjust the LabelFrame text to be generic.
-            osc_frame.config(text=f"Oscillator {index + 1}") # Keep a static part
-
-            # Place the editable name label and entry within the frame
-            name_label.grid(row=0, column=0, sticky="ew", padx=5, pady=2, columnspan=1) # Span less
-            name_label.bind("<Button-1>", lambda e: show_name_entry())
-            
-            # Hide entry initially
-            # name_entry.grid_forget() # Not needed if not gridded yet
-
-        def show_name_entry():
-            name_label.grid_forget()
-            name_entry.grid(row=0, column=0, sticky="ew", padx=5, pady=2, columnspan=1)
-            name_entry.focus_set()
-            name_entry.bind("<Return>", lambda e: update_name())
-            name_entry.bind("<FocusOut>", lambda e: update_name())
-            
-        def update_name():
-            new_name = name_var.get().strip()
-            if not new_name: # Prevent empty names, revert or use default
-                new_name = f"Osc {index + 1}" 
-                name_var.set(new_name)
-            
-            osc.name = new_name
-            name_entry.grid_forget()
-            name_label.grid(row=0, column=0, sticky="ew", padx=5, pady=2, columnspan=1)
-            # osc_frame.config(text=new_name) # Update LabelFrame text if we were using it dynamically
-            self.update_custom_chord_note_ui() # Refresh note UI
-
-        # Initial setup for the name display
-        make_name_editable(None) 
-        # --- End Editable Name Functionality ---
-        
         if len(self.chord_generator.oscillators) > 1:
             remove_btn = ttk.Button(osc_frame, text="X",
                                   command=lambda i=index: self.remove_oscillator(i),
                                   width=2)
-            remove_btn.grid(row=0, column=2, padx=1, pady=0, sticky="ne") # Adjusted row if name is on row 0
+            # Place remove button neatly, e.g., at the top-right of the content area
+            # If LabelFrame text is dynamic, this button should be inside.
+            # For simplicity, let's assume it's part of the main content grid of osc_frame.
+            # It needs to be added to a specific row/column in osc_frame's internal grid.
+            # Let's put it next to where the name *would* have been if it was editable here.
+            # Grid it to the LabelFrame itself if it should appear on the border, else manage internally.
+            # For now, let's try to make it appear on the top right of the content.
+            # This is often done by having a sub-frame or careful grid placement.
 
-        # Adjust other elements if name label/entry takes row 0, column 0
-        # The preview and basic_frame might need to start from row=1 or be in different columns.
-        # For now, assuming name label/entry is compact and other elements can adjust.
-        # If the name label takes the full width, other elements (like remove_btn) need care.
-        # Let\'s ensure remove_btn is to the right of the name or in its own column space.
-        # The create_waveform_preview and basic_frame should now be placed starting from row 1.
+            # Simplification: Place it on the first row, last column of internal grid of osc_frame
+            # We need to define how osc_frame's columns are structured. Let's say 2 columns.
+            osc_frame.grid_columnconfigure(0, weight=1) # For controls
+            osc_frame.grid_columnconfigure(1, weight=0) # For remove button
+            remove_btn.grid(row=0, column=1, padx=1, pady=0, sticky="ne") 
 
-        self.create_waveform_preview(osc_frame, index, start_row=1) # Pass start_row
+        self.create_waveform_preview(osc_frame, index, base_row=0) # Pass base_row for internal gridding
         
         basic_frame = ttk.Frame(osc_frame)
-        basic_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=0) # start_row + 1, span 3
+        # Basic frame now starts at row 1 if preview is at row 0
+        basic_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=0)
         
         enable_cb = ttk.Checkbutton(basic_frame, text="On",
                                   variable=self.enabled_vars[index],
@@ -467,7 +458,7 @@ class ChordGeneratorApp:
         detune_scale.grid(row=0, column=7, padx=(0,1))
         
         adsr_frame = ttk.LabelFrame(osc_frame, text="ADSR", padding="1")
-        adsr_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=0)
+        adsr_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=0)
         
         adsr_labels = ['A', 'D', 'S', 'R']
         adsr_vars = [self.attack_vars[index], self.decay_vars[index],
@@ -479,7 +470,7 @@ class ChordGeneratorApp:
                      variable=var, orient=tk.HORIZONTAL, length=35).grid(row=0, column=i*2+1, padx=(0,1))
         
         filter_frame = ttk.Frame(osc_frame)
-        filter_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=0)
+        filter_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=0)
         
         ttk.Label(filter_frame, text="Cut:").grid(row=0, column=0, padx=(1,0))
         ttk.Scale(filter_frame, from_=0, to=1,
@@ -498,7 +489,7 @@ class ChordGeneratorApp:
         
         # EQ Controls Frame
         eq_frame = ttk.LabelFrame(osc_frame, text="EQ", padding="1")
-        eq_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=0)
+        eq_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=0)
         for i in range(8):
             eq_band_label = f"{Oscillator.EQ_BAND_FREQUENCIES[i]}" # Hz
             if Oscillator.EQ_BAND_FREQUENCIES[i] >= 1000:
@@ -514,8 +505,8 @@ class ChordGeneratorApp:
 
         self.bind_oscillator_controls(index)
     
-    def create_waveform_preview(self, parent, index, start_row=0): # Add start_row parameter
-        """Create a small waveform preview canvas"""
+    def create_waveform_preview(self, parent, index, base_row=0):
+        """Create a small waveform preview canvas, gridded at base_row"""
         fig = Figure(figsize=(1.2, 0.4), dpi=70)
         ax = fig.add_subplot(111)
         
@@ -530,7 +521,7 @@ class ChordGeneratorApp:
         
         canvas = FigureCanvasTkAgg(fig, master=parent)
         canvas.draw()
-        canvas.get_tk_widget().grid(row=start_row, column=0, columnspan=2, padx=1, pady=0, sticky="ew") # Use start_row
+        canvas.get_tk_widget().grid(row=base_row, column=0, columnspan=1, padx=1, pady=0, sticky="ew") # columnspan 1 if remove is in col 1
         
         self.waveform_canvases[index] = canvas
     
@@ -891,7 +882,7 @@ class ChordGeneratorApp:
 
         all_note_names = list(ChordGenerator.NOTE_FREQUENCIES.keys())
         # Use oscillator names for the dropdown
-        osc_names = ["Master/All"] + [osc.name for osc in self.chord_generator.oscillators]
+        osc_names = ["master"] + [osc.name for osc in self.chord_generator.oscillators]
         
         for i, note_data in enumerate(self.custom_chord_notes_data):
             # Each note_ui_frame is now created inside self.custom_notes_content_frame
@@ -916,58 +907,53 @@ class ChordGeneratorApp:
             octave_spin.bind('<FocusOut>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
             octave_spin.bind('<Return>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
 
-            # Oscillator Assignment Combobox
-            osc_idx_var = tk.IntVar(value=note_data.get('osc_idx', -1)) # Default to -1 if not present
+            osc_idx_var = tk.IntVar(value=note_data.get('osc_idx', -1))
             self.note_osc_idx_vars.append(osc_idx_var)
-            osc_combo = ttk.Combobox(note_ui_frame, textvariable=osc_idx_var, values=osc_names, width=10, state='readonly')
-            # We need to map the int value (-1, 0, 1...) to the string display for initial set
+            osc_combo = ttk.Combobox(note_ui_frame, textvariable=osc_idx_var, values=osc_names, width=15, state='readonly')
+            
+            # Explicitly define current_assigned_osc_idx for setting the combobox
             current_assigned_osc_idx = note_data.get('osc_idx', -1)
+            
+            # Determine the display name for the combobox
+            display_name_for_combo = "master" # Default
             if current_assigned_osc_idx == -1:
-                osc_combo.set("Master/All")
+                display_name_for_combo = "master"
             elif 0 <= current_assigned_osc_idx < len(self.chord_generator.oscillators):
-                # Use the oscillator\'s name
-                osc_combo.set(self.chord_generator.oscillators[current_assigned_osc_idx].name)
-            else: # Should not happen if data is clean, fallback
-                osc_combo.set("Master/All") 
-                self.custom_chord_notes_data[i]['osc_idx'] = -1 # Correct data if inconsistent
+                display_name_for_combo = self.chord_generator.oscillators[current_assigned_osc_idx].name
+            else:
+                # If idx is out of bounds (but not -1), it implies inconsistent data.
+                # Set to Master/All and correct the underlying data.
+                display_name_for_combo = "Master/All"
+                if i < len(self.custom_chord_notes_data):
+                    self.custom_chord_notes_data[i]['osc_idx'] = -1
+            
+            osc_combo.set(display_name_for_combo)
 
             osc_combo.pack(side=tk.TOP, pady=1)
-            # When an item is selected, we need to find its index based on the name
             osc_combo.bind('<<ComboboxSelected>>', 
                            lambda e, idx=i, cb=osc_combo: self.on_custom_note_param_change(idx, 'osc_idx', cb.get()))
 
             remove_btn = ttk.Button(note_ui_frame, text="-", width=1, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
             remove_btn.pack(side=tk.TOP, pady=1)
         
-        # After repopulating, update the scrollregion again
         self.custom_notes_content_frame.update_idletasks()
         self.custom_notes_canvas.configure(scrollregion=self.custom_notes_canvas.bbox("all"))
 
     def on_custom_note_param_change(self, note_idx: int, param_type: str, new_value):
         """Called when a note\'s pitch or octave adjustment is changed in the UI."""
         if note_idx < len(self.custom_chord_notes_data):
-            # Ensure the new_value for octave_adjust is an int if coming from spinbox command
             if param_type == 'octave_adjust':
-                try:
-                    new_value = int(new_value)
-                except ValueError:
-                    # Revert to old value or a default if conversion fails
-                    # For now, let's try to keep the old value if possible
-                    # This might need access to the tk.IntVar directly to reset if truly invalid
-                    # Or simply prevent non-integer input in Spinbox if possible, though command gives string.
-                    print(f"Warning: Invalid octave adjustment value '{new_value}'")
-                    return # Prevent update with bad value
+                try: new_value = int(new_value)
+                except ValueError: return
 
             if param_type == 'pitch':
                 self.custom_chord_notes_data[note_idx]['pitch'] = str(new_value)
             elif param_type == 'octave_adjust':
-                 self.custom_chord_notes_data[note_idx]['octave_adjust'] = new_value # Already int
+                 self.custom_chord_notes_data[note_idx]['octave_adjust'] = new_value
             elif param_type == 'osc_idx':
-                # new_value here is the string from combobox, e.g., "Master/All" or an oscillator name
                 if new_value == "Master/All":
                     self.custom_chord_notes_data[note_idx]['osc_idx'] = -1
                 else:
-                    # Find the oscillator index by its name
                     found_osc_idx = -1
                     for idx, osc in enumerate(self.chord_generator.oscillators):
                         if osc.name == new_value:
@@ -976,15 +962,14 @@ class ChordGeneratorApp:
                     if found_osc_idx != -1:
                         self.custom_chord_notes_data[note_idx]['osc_idx'] = found_osc_idx
                     else:
-                        print(f"Warning: Could not find oscillator with name '{new_value}'. Defaulting to Master/All.")
+                        # This case should ideally not happen if combobox is populated correctly
+                        # and names are unique (which they should be if renaming is managed well).
+                        print(f"Warning: Oscillator name '{new_value}' not found. Defaulting to Master/All.")
                         self.custom_chord_notes_data[note_idx]['osc_idx'] = -1
-                        # Update the combobox display back to Master/All if parsing fails
-                        # This requires getting the specific combobox, which is possible if stored or passed.
-                        # For now, data is corrected, UI will update on next full refresh.
+                        # Consider re-setting the combobox to 'Master/All' visually if possible
             
             if self.type_var.get() != "-- Custom --":
                 self.type_var.set("-- Custom --")
-            # print(f"Updated custom_chord_notes_data[{note_idx}]: {self.custom_chord_notes_data[note_idx]}") # For debugging
 
     def add_note_to_custom_chord(self):
         """Adds a new default note to the custom chord structure and updates UI."""
@@ -1008,28 +993,21 @@ class ChordGeneratorApp:
 
     def add_oscillator(self):
         """Add a new oscillator"""
-        index = self.chord_generator.add_oscillator()
-        self.chord_generator.oscillators[index].name = f"Osc {index + 1}" # Assign default name
+        index = self.chord_generator.add_oscillator() # Name is now set in Oscillator class
         self.init_oscillator_controls(index)
         self.create_oscillator_frame(self.oscillator_frame, index)
         self.update_waveform_preview(index)
-        self.update_custom_chord_note_ui() # Refresh note UIs to include new oscillator
+        self.update_custom_chord_note_ui() 
     
     def remove_oscillator(self, index):
         """Remove an oscillator"""
-        removed_osc_globally_unique_id = None # Placeholder if we need to identify it beyond index
-        num_oscs_before_removal = len(self.chord_generator.oscillators)
-
         if self.chord_generator.remove_oscillator(index):
             # Adjust osc_idx in custom_chord_notes_data due to removal
             for note_data in self.custom_chord_notes_data:
                 current_assigned_idx = note_data.get('osc_idx', -1)
-                if current_assigned_idx == -1: # Master/All, no change needed
-                    continue
-                if current_assigned_idx == index: # Was assigned to the removed oscillator
-                    note_data['osc_idx'] = -1 # Revert to Master/All
-                elif current_assigned_idx > index: # Was assigned to an oscillator that shifted down
-                    note_data['osc_idx'] = current_assigned_idx - 1
+                if current_assigned_idx == -1: continue
+                if current_assigned_idx == index: note_data['osc_idx'] = -1
+                elif current_assigned_idx > index: note_data['osc_idx'] = current_assigned_idx - 1
 
             # Remove control variables
             for var_list in [self.wave_vars, self.amp_vars, self.detune_vars,
@@ -1037,31 +1015,19 @@ class ChordGeneratorApp:
                            self.release_vars, self.cutoff_vars, self.resonance_vars,
                            self.pan_vars, self.enabled_vars, self.solo_vars, self.eq_gain_vars]:
                 if index < len(var_list):
-                    # Check if var_list is the list of lists for EQ gains
                     if var_list is self.eq_gain_vars: 
-                        if index < len(var_list): # Redundant check, but safe
-                            del var_list[index]
+                        if index < len(var_list): del var_list[index]
                     elif isinstance(var_list, list) and len(var_list) > 0 and isinstance(var_list[0], tk.Variable):
-                        # This handles lists of tk.Variables like self.wave_vars etc.
-                        if index < len(var_list): 
-                            del var_list[index]
-                    # else: it's an empty list or not a list of tk.Variable, skip (should not happen for these vars)
+                        if index < len(var_list): del var_list[index]
 
-            # Remove visualization
-            if index in self.waveform_plots:
-                del self.waveform_plots[index]
-            if index in self.waveform_canvases:
-                del self.waveform_canvases[index]
+            if index in self.waveform_plots: del self.waveform_plots[index]
+            if index in self.waveform_canvases: del self.waveform_canvases[index]
             
-            # Destroy frame and update GUI
-            for widget in self.oscillator_frame.winfo_children():
-                widget.destroy()
-            
-            # Recreate remaining oscillators
-            for i in range(len(self.chord_generator.oscillators)):
-                self.create_oscillator_frame(self.oscillator_frame, i)
-                self.update_waveform_preview(i)
-            self.update_custom_chord_note_ui() # Refresh note UIs for new osc list
+            # Refresh UI
+            self.update_oscillator_frames_after_rename() # Rebuild all frames
+            self.update_custom_chord_note_ui() 
+        else:
+            messagebox.showwarning("Remove Oscillator", "Cannot remove the last oscillator.")
 
     def on_root_or_type_change(self, *args):
         """Handles changes to root note or chord type, updating custom chord data and UI."""
@@ -1104,7 +1070,21 @@ class ChordGeneratorApp:
                 print(size_str)
                 self._last_reported_size = size_str
 
+    def update_oscillator_frames_after_rename(self):
+        """Rebuilds all oscillator frames to reflect new names and order."""
+        # Clear existing oscillator frames
+        for widget in self.oscillator_frame.winfo_children():
+            widget.destroy()
+        
+        # Re-create all oscillator frames. This will use the new names.
+        for i in range(len(self.chord_generator.oscillators)):
+            self.create_oscillator_frame(self.oscillator_frame, i)
+            self.update_waveform_preview(i) # Ensure preview is also updated
+
 if __name__ == "__main__":
+    # Reset Oscillator count when app starts, if desired for consistent default naming like "Oscillator 1", "Oscillator 2" etc.
+    # This is a design choice. If names are loaded from a file, this might not be wanted here.
+    # Oscillator._osc_count = 0 # Moved to init_control_variables for better control if app can be re-initialized
     root = tk.Tk()
     app = ChordGeneratorApp(root)
     root.mainloop() 

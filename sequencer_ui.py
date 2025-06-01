@@ -46,7 +46,6 @@ class SequencerUI:
         self._setup_gui()
 
     def _setup_gui(self):
-        # Sequencer Controls Frame
         seq_controls_frame = ttk.LabelFrame(self.master_frame, text="Sequencer", padding="2")
         seq_controls_frame.grid(row=0, column=0, sticky="ew", padx=2, pady=(2,1))
         seq_controls_frame.grid_columnconfigure(1, weight=1)
@@ -56,18 +55,32 @@ class SequencerUI:
                               textvariable=self.bpm_var, width=3)
         bpm_spin.grid(row=0, column=1, padx=(1,2), pady=1)
 
-        # Sequence Display Text Area
-        self.sequence_text = tk.Text(self.master_frame, height=5, width=40)
-        self.sequence_text.grid(row=1, column=0, sticky="ew", padx=2, pady=1)
+        # --- Sequence Text Area with Scrollbars ---
+        text_frame = ttk.Frame(self.master_frame)
+        text_frame.grid(row=1, column=0, sticky="nsew", padx=2, pady=1)
+        self.master_frame.grid_rowconfigure(1, weight=1) # Allow text_frame to expand
+        self.master_frame.grid_columnconfigure(0, weight=1)
 
-        # "Apply Text Changes" Button
+        self.sequence_text = tk.Text(text_frame, height=5, width=40, wrap=tk.NONE) # wrap=tk.NONE for horizontal scroll
+        self.sequence_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        v_scrollbar_text = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.sequence_text.yview)
+        v_scrollbar_text.pack(side=tk.RIGHT, fill=tk.Y)
+        self.sequence_text.config(yscrollcommand=v_scrollbar_text.set)
+
+        h_scrollbar_text = ttk.Scrollbar(self.master_frame, orient=tk.HORIZONTAL, command=self.sequence_text.xview)
+        h_scrollbar_text.grid(row=2, column=0, sticky="ew", padx=2)
+        self.sequence_text.config(xscrollcommand=h_scrollbar_text.set)
+        # --- End Sequence Text Area ---
+
         apply_text_btn = ttk.Button(self.master_frame, text="Apply", 
                                     command=self._apply_text_to_sequence)
-        apply_text_btn.grid(row=2, column=0, sticky="ew", padx=2, pady=(1,2))
+        # Row for apply button needs to be after h_scrollbar_text
+        apply_text_btn.grid(row=3, column=0, sticky="ew", padx=2, pady=(1,2))
 
-        # Play Controls Frame
         play_controls_frame = ttk.Frame(self.master_frame)
-        play_controls_frame.grid(row=3, column=0, sticky="ew", padx=2, pady=1)
+        # Row for play_controls needs to be after apply_text_btn
+        play_controls_frame.grid(row=4, column=0, sticky="ew", padx=2, pady=1)
         
         buttons = [
             ("Preview Chord", self.app.preview_chord),
@@ -91,125 +104,141 @@ class SequencerUI:
             pass
 
     def _apply_text_to_sequence(self):
-        """Parses the content of the sequence_text widget and updates the internal sequence data."""
+        print("--- _apply_text_to_sequence called ---") # DEBUG
         all_text = self.sequence_text.get("1.0", tk.END).strip()
+        print(f"Raw text from widget:\n'''{all_text}'''") # DEBUG
+
         if not all_text:
-            # If text area is empty, clear the sequence
             if messagebox.askyesno("Clear Sequence?", "Text area is empty. Clear the current sequence?"):
                 self.sequencer.clear_sequence()
                 self.update_sequence_display()
             return
 
         lines = all_text.split('\n')
+        print(f"Split lines: {lines}") # DEBUG
         new_sequence_data = []
         
-        # Regex for the overall line structure
-        line_regex = re.compile(r"^\d+\.\s*Notes:\s*(.+?)\s*\(Oct:\s*(-?\d+),\s*([\d.]+)\s*beats\)"
-                               )
-        # Regex for individual notes like "C+0" or "Db-1"
-        note_regex = re.compile(r"([A-Ga-g][#b]?)\s*([+-]\d+)")
-        # Valid note pitches from ChordGenerator (assuming it's accessible like this)
-        # This is a simplification; ideally, ChordGenerator.NOTE_FREQUENCIES would be passed or accessed more directly
+        # Regex for overall line: "1. Oct:4 | Dur:1.0 beats | Notes: C+0[osc1], E+0[osc1]"
+        # Groups: 1=step_num (ignored), 2=master_octave, 3=duration, 4=notes_string
+        line_regex = re.compile(r"^(\d+)\.\s*Oct:(-?\d+)\s*\|\s*Dur:([\d.]+)\s*beats\s*\|\s*Notes:\s*(.+)$")
+        
+        # Regex for individual note: "C+0[osc1]" or "G#-1[Master/All]" or "A+0[Some Osc Name]"
+        # Groups: 1=pitch, 2=octave_adjust, 3=osc_name
+        # Allowing spaces in osc_name: [\w\s\-/()!]+ for more flexible osc names, or be stricter if names are constrained.
+        # For now, let's assume osc names can have word characters, spaces, hyphens.
+        note_regex = re.compile(r"([A-Ga-g][#b]?)([+-]\d+)\[([\\w\\s\\-]+|\"(?:[^\"]+)\"|\'(?:[^\']+)\')\]")
+        # Simpler osc_name if no spaces: \[([\\w\\-]+)\]
+        # Current osc_name_regex: ([\\w\\s\\-]+) - allows words, spaces, hyphens. 
+        # If oscillator names can contain brackets or other special characters, this regex for osc_name would need to be more robust.
+        # Let's use a version that matches anything inside brackets not being a closing bracket: \[([^]]+)\]
+        note_regex_final = re.compile(r"([A-Ga-g][#b]?)([+-]\d+)\[([^]]+)\]")
+
         valid_pitches = list(self.app.chord_generator.NOTE_FREQUENCIES.keys())
+        all_osc_objects = self.app.chord_generator.oscillators
 
         for line_num, line_content in enumerate(lines, 1):
             line_content = line_content.strip()
-            if not line_content: # Skip empty lines if any
+            print(f"Processing line {line_num}: '{line_content}'") # DEBUG
+            if not line_content: 
+                print(f"Line {line_num} is empty, skipping.") # DEBUG
                 continue
 
             match = line_regex.match(line_content)
             if not match:
-                messagebox.showerror("Parsing Error", f"Line {line_num} does not match expected format.\nExpected: 'X. Notes: P+O, ... (Oct: M, D beats)'")
+                print(f"DEBUG: line_regex MISMATCH on line: '{line_content}'") # DEBUG
+                messagebox.showerror("Parsing Error", f"Line {line_num}: Structure mismatch.\nExpected format: 'X. Oct:M | Dur:D beats | Notes: P+O[Osc], ...'")
                 return
 
-            notes_summary_str, master_octave_str, duration_str = match.groups()
+            _step_num_str, master_octave_str, duration_str, notes_summary_str = match.groups()
             
             try:
                 master_octave = int(master_octave_str)
                 duration = float(duration_str)
-                if duration <= 0:
-                    raise ValueError("Duration must be positive.")
+                if duration <= 0: raise ValueError("Duration must be positive.")
             except ValueError as e:
-                messagebox.showerror("Parsing Error", f"Line {line_num}: Invalid master octave or duration.\nMaster Octave: '{master_octave_str}', Duration: '{duration_str}'. Error: {e}")
+                messagebox.showerror("Parsing Error", f"Line {line_num}: Invalid master octave or duration. Error: {e}")
                 return
 
             parsed_notes_data = []
-            if notes_summary_str.lower() == "(no notes)":
-                # Allow explicitly stating no notes, treat as empty step for sound gen (will be skipped)
-                pass 
+            if notes_summary_str.strip().lower() == "(no notes)":
+                pass # Valid empty step
             else:
-                note_parts = notes_summary_str.split(',')
-                if not note_parts or not note_parts[0].strip(): # Handle case of empty notes_summary_str
-                     messagebox.showerror("Parsing Error", f"Line {line_num}: Notes section is empty or invalid.")
-                     return
+                note_parts_str = notes_summary_str.split(',')
+                if not note_parts_str or not note_parts_str[0].strip():
+                    messagebox.showerror("Parsing Error", f"Line {line_num}: Notes section is empty or invalid after 'Notes:'.")
+                    return
 
-                for note_idx, note_part_str in enumerate(note_parts, 1):
+                for note_idx_in_line, note_part_str in enumerate(note_parts_str, 1):
                     note_part_str = note_part_str.strip()
-                    note_match = note_regex.match(note_part_str)
+                    note_match = note_regex_final.match(note_part_str)
                     if not note_match:
-                        messagebox.showerror("Parsing Error", f"Line {line_num}, Note {note_idx} ('{note_part_str}'): Invalid note format. Expected 'P+O' (e.g., C#+1).")
+                        messagebox.showerror("Parsing Error", 
+                                             f"Line {line_num}, Note entry '{note_part_str}': Invalid format.\nExpected: 'P+/-O[OscName]' (e.g., C+0[osc1] or G#-1[Master/All])")
                         return
                     
-                    pitch, octave_adjust_str = note_match.groups()
+                    pitch_str, octave_adjust_str, osc_name_str = note_match.groups()
+                    
                     try:
                         octave_adjust = int(octave_adjust_str)
                     except ValueError:
-                        messagebox.showerror("Parsing Error", f"Line {line_num}, Note {note_idx} ('{note_part_str}'): Invalid octave adjustment. Must be integer.")
+                        messagebox.showerror("Parsing Error", f"Line {line_num}, Note '{pitch_str}': Invalid octave adjustment '{octave_adjust_str}'.")
                         return
 
-                    # Validate pitch case-insensitively but store the canonical form (uppercase)
-                    canonical_pitch = pitch.upper().replace('B#', 'C').replace('E#', 'F') # Basic enharmonic equivalents for validation
-                    # A more robust enharmonic handling might be needed if users input B# etc. expecting it
-                    # For now, we check against the defined NOTE_FREQUENCIES keys
+                    # Pitch validation (simplified from original, can be expanded with enharmonics)
+                    canonical_pitch = pitch_str.upper()
+                    if canonical_pitch not in valid_pitches:
+                         # Try common flat to sharp conversion for robust parsing
+                        enharmonic_map = {'DB':'C#', 'EB':'D#', 'FB':'E', 'GB':'F#', 'AB':'G#', 'BB':'A#'}
+                        if canonical_pitch in enharmonic_map and enharmonic_map[canonical_pitch] in valid_pitches:
+                            canonical_pitch = enharmonic_map[canonical_pitch]
+                        else:
+                            messagebox.showerror("Parsing Error", f"Line {line_num}, Note '{pitch_str}': Invalid pitch. Supported: {valid_pitches}")
+                            return
                     
-                    # The regex for pitch already captures sharps and flats correctly (e.g. C#, Db)
-                    # We need to ensure the captured pitch (potentially like 'db') is compared correctly to keys like 'C#', 'Db'
-                    # Simplest is to ensure valid_pitches contains all expected forms or normalize input pitch before check.
-                    # Current NOTE_FREQUENCIES uses 'C#', 'D#', 'F#', 'G#', 'A#' for sharps. Flats are not used in keys.
-                    # Let's assume user might type 'Db' and we should recognize it if 'C#' is the key.
-                    # This requires a mapping or more complex validation than direct `in valid_pitches` if we support typed flats. 
-                    # For now, we stick to what NOTE_FREQUENCIES defines.
-                    # Let's make the check: pitch.upper() in valid_pitches OR an equivalent is in valid_pitches.
-                    # The simplest for now: ensure user types sharps as per NOTE_FREQUENCIES or we add flat equivalents to NOTE_FREQUENCIES.
-                    # For this iteration, we will assume the user enters notes as they appear in NOTE_FREQUENCIES (e.g. C# not Db unless Db is also a key)
-                    # So, pitch.upper() should be sufficient if NOTE_FREQUENCIES keys are all uppercase.
-
-                    found_pitch = False
-                    final_pitch_to_store = ""
-                    # Check for direct match (e.g. C, D, E) or sharp match (e.g. C#)
-                    if pitch.upper() in valid_pitches:
-                        found_pitch = True
-                        final_pitch_to_store = pitch.upper()
-                    else: 
-                        # Handle common flat-to-sharp conversions for validation if user typed a flat
-                        # e.g. if user types Db, convert to C# for checking against valid_pitches
-                        enharmonic_map = {
-                            'DB': 'C#', 'EB': 'D#', 'FB': 'E', 
-                            'GB': 'F#', 'AB': 'G#', 'BB': 'A#'
-                        }
-                        normalized_input_pitch = pitch.upper()
-                        if normalized_input_pitch in enharmonic_map and enharmonic_map[normalized_input_pitch] in valid_pitches:
-                            found_pitch = True
-                            final_pitch_to_store = enharmonic_map[normalized_input_pitch]
-                        elif normalized_input_pitch.endswith('B') and len(normalized_input_pitch) == 2 and normalized_input_pitch[0]+"#" in valid_pitches: # e.g. User typed CB, check for B
-                             # This case is less common. Cb is B. Fb is E.
-                             pass # Covered by Fb -> E above for example
-
-                    if not found_pitch:
-                        messagebox.showerror("Parsing Error", f"Line {line_num}, Note {note_idx} ('{pitch}'): Invalid or unsupported note pitch. Use standard sharps (e.g., C#, F#). Supported: {valid_pitches}")
-                        return
+                    # Oscillator name/index resolution
+                    assigned_osc_idx = -1 # Default to Master/All
+                    osc_name_str_cleaned = osc_name_str.strip()
                     
-                    parsed_notes_data.append({'pitch': final_pitch_to_store, 'octave_adjust': octave_adjust})
-            
+                    if osc_name_str_cleaned.lower() == "master/all":
+                        assigned_osc_idx = -1
+                    else:
+                        found_osc = False
+                        for current_osc_idx, osc_obj in enumerate(all_osc_objects):
+                            if osc_obj.name == osc_name_str_cleaned:
+                                assigned_osc_idx = current_osc_idx
+                                found_osc = True
+                                break
+                        if not found_osc:
+                            # Handle special debug name from display like "osc_idx_2(!)_"
+                            if osc_name_str_cleaned.startswith("osc_idx_") and osc_name_str_cleaned.endswith("(!)_"):
+                                try:
+                                    parsed_original_idx = int(osc_name_str_cleaned.split('_')[2])
+                                    # This was an oscillator that existed but was removed. What to do?
+                                    # Option: default to Master/All with a warning, or error out.
+                                    # For now, let's default and allow the user to fix it.
+                                    print(f"Warning: Line {line_num}, Note '{pitch_str}': Oscillator '{osc_name_str}' (original index {parsed_original_idx}) no longer exists. Defaulting to Master/All.")
+                                    assigned_osc_idx = -1 # Default to Master/All
+                                except: # Broad except if parsing the debug name fails
+                                    messagebox.showerror("Parsing Error", f"Line {line_num}, Note '{pitch_str}': Oscillator name '{osc_name_str}' not found.")
+                                    return
+                            else:
+                                messagebox.showerror("Parsing Error", f"Line {line_num}, Note '{pitch_str}': Oscillator name '{osc_name_str}' not found.")
+                                return
+
+                    parsed_notes_data.append({
+                        'pitch': canonical_pitch, 
+                        'octave_adjust': octave_adjust, 
+                        'osc_idx': assigned_osc_idx
+                    })
+           
             new_sequence_data.append({
                 'master_octave': master_octave,
                 'duration': duration,
                 'notes_data': parsed_notes_data
             })
 
-        # If all parsing is successful
-        self.sequencer.sequence = new_sequence_data # Replace the old sequence
-        self.update_sequence_display() # Refresh the text display (normalizes format)
+        self.sequencer.sequence = new_sequence_data
+        self.update_sequence_display() # Refresh display with potentially normalized/corrected data
         messagebox.showinfo("Sequence Updated", "Sequence successfully updated from text.")
 
     def add_to_sequence(self):
@@ -226,12 +255,29 @@ class SequencerUI:
         self.update_sequence_display()
     
     def update_sequence_display(self):
-        self.sequence_text.delete(1.0, tk.END)
+        self.sequence_text.delete(1.0, tk.END) # Clear existing text
+        
         for i, step in enumerate(self.sequencer.sequence):
-            notes_summary = ", ".join([f"{n['pitch']}{n['octave_adjust']:+d}" for n in step['notes_data']])
-            if not notes_summary: notes_summary = "(No notes)"
-            self.sequence_text.insert(tk.END, 
-                f"{i+1}. Notes: {notes_summary} (Oct: {step['master_octave']}, {step['duration']} beats)\n")
+            notes_summary_parts = []
+            for note_data in step['notes_data']:
+                pitch = note_data['pitch']
+                oct_adj = note_data['octave_adjust']
+                osc_idx = note_data.get('osc_idx', -1) 
+                
+                osc_display_name = "Master/All"
+                if 0 <= osc_idx < len(self.app.chord_generator.oscillators):
+                    osc_display_name = self.app.chord_generator.oscillators[osc_idx].name
+                elif osc_idx != -1: # Should ideally not happen if data is clean
+                    # This indicates an invalid index, perhaps an oscillator was removed
+                    # The parser will need to handle this gracefully, maybe default to Master/All
+                    osc_display_name = f"osc_idx_{osc_idx}(!)_" # Make it distinct for parsing/debugging
+                
+                notes_summary_parts.append(f"{pitch}{oct_adj:+d}[{osc_display_name}]")
+            
+            notes_final_summary = ", ".join(notes_summary_parts) if notes_summary_parts else "(No notes)"
+            
+            line = f"{i+1}. Oct:{step['master_octave']} | Dur:{step['duration']} beats | Notes: {notes_final_summary}\n"
+            self.sequence_text.insert(tk.END, line)
 
     def play_sequence(self):
         if not self.sequencer.sequence:
