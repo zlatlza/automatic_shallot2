@@ -83,74 +83,75 @@ class ChordGenerator:
         return self.chord_definitions.get(chord_type, {}).get("description", "")
     
     def generate_chord(self, master_octave: int, notes_data: List[Dict], duration_ms: int = 1000, fade_out_ms: int = 100, master_volume: float = 1.0, master_mute: bool = False, soloed_osc_idx: int = -1) -> np.ndarray:
-        """ Generates a chord based on a list of notes, each with a pitch and octave adjustment. """
+        """ Generates a chord based on a list of notes, each with a pitch, octave adjustment, and oscillator assignment. """
         
         if not notes_data:
-            # raise ValueError("No notes data provided to generate chord")
-            return np.array([]) # Return empty if no notes
+            return np.array([]) 
 
-        # Add extra time for fade out
         total_duration = duration_ms + fade_out_ms
-        final_samples = np.zeros(int(44100 * total_duration / 1000))
-        # active_oscillators_count = 0 # Renamed to avoid conflict with outer scope var if any
+        final_samples_shape = int(44100 * total_duration / 1000)
+        combined_note_samples = np.zeros(final_samples_shape)
 
-        # Determine active oscillators based on solo state
+        # Determine effective oscillators based on global solo and enabled states
         if soloed_osc_idx != -1 and soloed_osc_idx < len(self.oscillators) and self.oscillators[soloed_osc_idx].enabled:
-            effective_oscs = [self.oscillators[soloed_osc_idx]]
-        else: # No solo or soloed oscillator is disabled, consider all enabled oscillators
-            effective_oscs = [osc for osc in self.oscillators if osc.enabled]
+            effective_oscs_for_master_all = [self.oscillators[soloed_osc_idx]]
+        else: 
+            effective_oscs_for_master_all = [osc for osc in self.oscillators if osc.enabled]
 
-        if not effective_oscs:
-            return final_samples # Return silence if no active oscillators
-            
-        num_notes_to_play = len(notes_data)
-        combined_note_samples = np.zeros(int(44100 * total_duration / 1000))
+        if not self.oscillators: # If no oscillators at all (e.g. all removed)
+             return np.zeros((final_samples_shape, 2)) if self.sound_mode != 'mono' else np.zeros(final_samples_shape)
 
-        for i, note_info in enumerate(notes_data):
-            osc_idx_for_note = i % len(effective_oscs)
-            osc = effective_oscs[osc_idx_for_note]
-            
+        for note_info in notes_data:
             note_pitch_str = note_info['pitch']
             note_octave_adjust = note_info['octave_adjust']
+            assigned_osc_idx_for_note = note_info.get('osc_idx', -1)
 
             if note_pitch_str not in self.NOTE_FREQUENCIES:
-                print(f"Warning: Pitch {note_pitch_str} not found in NOTE_FREQUENCIES. Skipping note.")
+                print(f"Warning: Pitch {note_pitch_str} not found. Skipping note.")
                 continue
 
             base_freq_for_note = self.NOTE_FREQUENCIES[note_pitch_str]
-            # The octave adjustment is relative to the master_octave, which itself is relative to octave 4 as the baseline for NOTE_FREQUENCIES
             current_note_freq = base_freq_for_note * (2 ** (master_octave - 4 + note_octave_adjust))
             
-            original_osc_freq = osc.frequency # Store original to restore if osc is shared
-            osc.frequency = current_note_freq
-            note_specific_samples = osc.generate_samples(total_duration)
-            osc.frequency = original_osc_freq # Restore if necessary
+            note_samples_this_note = np.zeros(final_samples_shape)
             
-            combined_note_samples += note_specific_samples
-            # active_oscillators_count +=1 # This isn't quite right for normalization if notes > oscs
+            oscillators_to_use_for_this_note = []
+            if assigned_osc_idx_for_note == -1: # Master/All
+                oscillators_to_use_for_this_note = effective_oscs_for_master_all
+            elif 0 <= assigned_osc_idx_for_note < len(self.oscillators):
+                specific_osc = self.oscillators[assigned_osc_idx_for_note]
+                if specific_osc.enabled: # Must be enabled
+                    if soloed_osc_idx != -1: # Global solo is active
+                        if soloed_osc_idx == assigned_osc_idx_for_note: # And this is the soloed one
+                            oscillators_to_use_for_this_note.append(specific_osc)
+                    else: # No global solo, so use this specific enabled osc
+                        oscillators_to_use_for_this_note.append(specific_osc)
+            
+            if not oscillators_to_use_for_this_note:
+                continue # No active oscillator for this note, skip to next note
 
-        # Normalize based on the number of notes or actual peak, careful here
-        if num_notes_to_play > 0: # Or if active_oscillators_count > 0
-            # A simple approach: average, then clip. More advanced would be dynamic compression or limiting.
-            # final_samples = np.clip(combined_note_samples / num_notes_to_play, -1, 1)
-            # Better normalization: by actual peak of the combined signal if it exceeds 1.0
-            max_val = np.max(np.abs(combined_note_samples))
-            if max_val > 1.0:
-                final_samples = combined_note_samples / max_val
-            else:
-                final_samples = combined_note_samples
-        else:
-            final_samples = combined_note_samples # Should be zeros if no notes played
+            for osc in oscillators_to_use_for_this_note:
+                original_osc_freq = osc.frequency 
+                osc.frequency = current_note_freq
+                generated_samples = osc.generate_samples(total_duration)
+                osc.frequency = original_osc_freq 
+                note_samples_this_note += generated_samples
             
-        # Apply fade out at the end
+            combined_note_samples += note_samples_this_note
+
+        final_samples = combined_note_samples
+        if final_samples.any():
+            max_val = np.max(np.abs(final_samples))
+            if max_val > 1.0:
+                final_samples = final_samples / max_val
+        
         if fade_out_ms > 0:
             fade_samples_count = int(44100 * fade_out_ms / 1000)
             fade_curve = np.linspace(1, 0, fade_samples_count)
             if len(final_samples) >= fade_samples_count:
                  final_samples[-fade_samples_count:] *= fade_curve
         
-        # Convert to stereo
-        stereo_output_samples = np.zeros((len(final_samples), 2)) # Initialize stereo array
+        stereo_output_samples = np.zeros((len(final_samples), 2))
         if self.sound_mode == 'mono':
             stereo_output_samples = np.column_stack((final_samples, final_samples))
         elif self.sound_mode == 'wide stereo':
@@ -158,12 +159,16 @@ class ChordGenerator:
             right_channel = np.pad(final_samples, (phase_shift, 0), 'constant')[:-phase_shift]
             if len(final_samples) == len(right_channel):
                 stereo_output_samples = np.column_stack((final_samples, right_channel))
-            else: # Fallback if padding/slicing results in mismatch
+            else: 
                 stereo_output_samples = np.column_stack((final_samples, final_samples))
-        else: # 'stereo' - TODO: Implement proper panning per oscillator contribution if possible
+        else: 
+            # For 'stereo' mode, if we want per-oscillator panning, it's complex here
+            # as samples are already mixed. Panning is currently an osc property.
+            # If different notes use different oscs with different pan settings,
+            # this simple column_stack won't reflect that. This needs a more advanced mixer.
+            # For now, treat 'stereo' like 'mono' in terms of L/R channel creation from mixed signal.
             stereo_output_samples = np.column_stack((final_samples, final_samples))
 
-        # Apply Master Volume and Mute
         if master_mute:
             stereo_output_samples = np.zeros_like(stereo_output_samples)
         else:
@@ -236,6 +241,7 @@ class ChordGeneratorApp:
         self.octave_var = tk.IntVar(value=4)
         self.note_octave_vars = []
         self.note_pitch_vars = []
+        self.note_osc_idx_vars = [] # For oscillator assignment per note
         self.custom_chord_notes_ui_frames = []
         self.custom_chord_notes_data = []
         self.custom_notes_canvas = None # For horizontal scrolling of notes
@@ -358,20 +364,76 @@ class ChordGeneratorApp:
     
     def create_oscillator_frame(self, parent, index):
         """Create a frame for a single oscillator"""
-        osc_frame = ttk.LabelFrame(parent, text=f"Osc {index + 1}", padding="1")
+        osc = self.chord_generator.oscillators[index]
+        osc_frame = ttk.LabelFrame(parent, text=osc.name, padding="1")
         osc_frame.grid(row=index, column=0, sticky="ew", padx=1, pady=1)
         osc_frame.grid_columnconfigure(1, weight=1)
+
+        # --- Editable Name Functionality ---
+        name_var = tk.StringVar(value=osc.name)
+        name_label = ttk.Label(osc_frame, textvariable=name_var, font=('TkDefaultFont', 9, 'bold'))
+        name_entry = ttk.Entry(osc_frame, textvariable=name_var)
+
+        def make_name_editable(event):
+            # Replace label with entry on the frame\'s title area (using grid_forget/grid)
+            # This is a bit tricky for LabelFrame text. A common approach is to
+            # place the label/entry *inside* the LabelFrame and manage its appearance.
+            # For simplicity here, we\'ll place a clickable label on top of the LabelFrame\'s text.
+            # A more robust solution might involve a custom widget or overlaying.
+
+            # Instead of modifying LabelFrame text directly, we add a new label widget for the name
+            # and an entry for editing. We\'ll manage these separately from the `text` option of LabelFrame.
+            # The LabelFrame\'s initial text will be static (e.g., "Oscillator Details").
+            # Let's adjust the LabelFrame text to be generic.
+            osc_frame.config(text=f"Oscillator {index + 1}") # Keep a static part
+
+            # Place the editable name label and entry within the frame
+            name_label.grid(row=0, column=0, sticky="ew", padx=5, pady=2, columnspan=1) # Span less
+            name_label.bind("<Button-1>", lambda e: show_name_entry())
+            
+            # Hide entry initially
+            # name_entry.grid_forget() # Not needed if not gridded yet
+
+        def show_name_entry():
+            name_label.grid_forget()
+            name_entry.grid(row=0, column=0, sticky="ew", padx=5, pady=2, columnspan=1)
+            name_entry.focus_set()
+            name_entry.bind("<Return>", lambda e: update_name())
+            name_entry.bind("<FocusOut>", lambda e: update_name())
+            
+        def update_name():
+            new_name = name_var.get().strip()
+            if not new_name: # Prevent empty names, revert or use default
+                new_name = f"Osc {index + 1}" 
+                name_var.set(new_name)
+            
+            osc.name = new_name
+            name_entry.grid_forget()
+            name_label.grid(row=0, column=0, sticky="ew", padx=5, pady=2, columnspan=1)
+            # osc_frame.config(text=new_name) # Update LabelFrame text if we were using it dynamically
+            self.update_custom_chord_note_ui() # Refresh note UI
+
+        # Initial setup for the name display
+        make_name_editable(None) 
+        # --- End Editable Name Functionality ---
         
         if len(self.chord_generator.oscillators) > 1:
             remove_btn = ttk.Button(osc_frame, text="X",
                                   command=lambda i=index: self.remove_oscillator(i),
                                   width=2)
-            remove_btn.grid(row=0, column=2, padx=1, pady=0, sticky="ne")
-        
-        self.create_waveform_preview(osc_frame, index)
+            remove_btn.grid(row=0, column=2, padx=1, pady=0, sticky="ne") # Adjusted row if name is on row 0
+
+        # Adjust other elements if name label/entry takes row 0, column 0
+        # The preview and basic_frame might need to start from row=1 or be in different columns.
+        # For now, assuming name label/entry is compact and other elements can adjust.
+        # If the name label takes the full width, other elements (like remove_btn) need care.
+        # Let\'s ensure remove_btn is to the right of the name or in its own column space.
+        # The create_waveform_preview and basic_frame should now be placed starting from row 1.
+
+        self.create_waveform_preview(osc_frame, index, start_row=1) # Pass start_row
         
         basic_frame = ttk.Frame(osc_frame)
-        basic_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=0)
+        basic_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=0) # start_row + 1, span 3
         
         enable_cb = ttk.Checkbutton(basic_frame, text="On",
                                   variable=self.enabled_vars[index],
@@ -405,7 +467,7 @@ class ChordGeneratorApp:
         detune_scale.grid(row=0, column=7, padx=(0,1))
         
         adsr_frame = ttk.LabelFrame(osc_frame, text="ADSR", padding="1")
-        adsr_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=0)
+        adsr_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=0)
         
         adsr_labels = ['A', 'D', 'S', 'R']
         adsr_vars = [self.attack_vars[index], self.decay_vars[index],
@@ -417,7 +479,7 @@ class ChordGeneratorApp:
                      variable=var, orient=tk.HORIZONTAL, length=35).grid(row=0, column=i*2+1, padx=(0,1))
         
         filter_frame = ttk.Frame(osc_frame)
-        filter_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=0)
+        filter_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=0)
         
         ttk.Label(filter_frame, text="Cut:").grid(row=0, column=0, padx=(1,0))
         ttk.Scale(filter_frame, from_=0, to=1,
@@ -436,7 +498,7 @@ class ChordGeneratorApp:
         
         # EQ Controls Frame
         eq_frame = ttk.LabelFrame(osc_frame, text="EQ", padding="1")
-        eq_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=0)
+        eq_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=0)
         for i in range(8):
             eq_band_label = f"{Oscillator.EQ_BAND_FREQUENCIES[i]}" # Hz
             if Oscillator.EQ_BAND_FREQUENCIES[i] >= 1000:
@@ -452,7 +514,7 @@ class ChordGeneratorApp:
 
         self.bind_oscillator_controls(index)
     
-    def create_waveform_preview(self, parent, index):
+    def create_waveform_preview(self, parent, index, start_row=0): # Add start_row parameter
         """Create a small waveform preview canvas"""
         fig = Figure(figsize=(1.2, 0.4), dpi=70)
         ax = fig.add_subplot(111)
@@ -468,7 +530,7 @@ class ChordGeneratorApp:
         
         canvas = FigureCanvasTkAgg(fig, master=parent)
         canvas.draw()
-        canvas.get_tk_widget().grid(row=0, column=0, columnspan=2, padx=1, pady=0, sticky="ew")
+        canvas.get_tk_widget().grid(row=start_row, column=0, columnspan=2, padx=1, pady=0, sticky="ew") # Use start_row
         
         self.waveform_canvases[index] = canvas
     
@@ -790,7 +852,7 @@ class ChordGeneratorApp:
         if not chord_type_name or chord_type_name not in self.chord_generator.chord_definitions:
             # If invalid type, or if it was already custom, perhaps clear or use a default like single root note
             if not self.custom_chord_notes_data: # Only reset if truly empty, to avoid wiping user edits if called unexpectedly
-                 self.custom_chord_notes_data = [{'pitch': self.root_var.get(), 'octave_adjust': 0}]
+                 self.custom_chord_notes_data = [{'pitch': self.root_var.get(), 'octave_adjust': 0, 'osc_idx': -1 }]
             return
 
         root_note = self.root_var.get()
@@ -798,13 +860,13 @@ class ChordGeneratorApp:
         self.custom_chord_notes_data = []
         for interval in intervals:
             note_name = self._get_note_name(root_note, interval)
-            self.custom_chord_notes_data.append({'pitch': note_name, 'octave_adjust': 0})
+            self.custom_chord_notes_data.append({'pitch': note_name, 'octave_adjust': 0, 'osc_idx': -1 })
         # No self.type_var.set("-- Custom --") here; that's for when user *manually* edits.
 
     def update_custom_chord_note_ui(self):
         """Dynamically create/update UI controls for each note in self.custom_chord_notes_data, with horizontal scrolling."""
         
-        # If canvas and content frame don't exist, create them within self.custom_notes_frame
+        # If canvas and content frame don\'t exist, create them within self.custom_notes_frame
         if not self.custom_notes_canvas:
             self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=90)
             h_scrollbar = ttk.Scrollbar(self.custom_notes_frame, orient=tk.HORIZONTAL, command=self.custom_notes_canvas.xview)
@@ -825,8 +887,11 @@ class ChordGeneratorApp:
         self.custom_chord_notes_ui_frames = []
         self.note_pitch_vars = []
         self.note_octave_vars = []
+        self.note_osc_idx_vars = [] # Clear and repopulate
 
         all_note_names = list(ChordGenerator.NOTE_FREQUENCIES.keys())
+        # Use oscillator names for the dropdown
+        osc_names = ["Master/All"] + [osc.name for osc in self.chord_generator.oscillators]
         
         for i, note_data in enumerate(self.custom_chord_notes_data):
             # Each note_ui_frame is now created inside self.custom_notes_content_frame
@@ -851,6 +916,26 @@ class ChordGeneratorApp:
             octave_spin.bind('<FocusOut>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
             octave_spin.bind('<Return>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
 
+            # Oscillator Assignment Combobox
+            osc_idx_var = tk.IntVar(value=note_data.get('osc_idx', -1)) # Default to -1 if not present
+            self.note_osc_idx_vars.append(osc_idx_var)
+            osc_combo = ttk.Combobox(note_ui_frame, textvariable=osc_idx_var, values=osc_names, width=10, state='readonly')
+            # We need to map the int value (-1, 0, 1...) to the string display for initial set
+            current_assigned_osc_idx = note_data.get('osc_idx', -1)
+            if current_assigned_osc_idx == -1:
+                osc_combo.set("Master/All")
+            elif 0 <= current_assigned_osc_idx < len(self.chord_generator.oscillators):
+                # Use the oscillator\'s name
+                osc_combo.set(self.chord_generator.oscillators[current_assigned_osc_idx].name)
+            else: # Should not happen if data is clean, fallback
+                osc_combo.set("Master/All") 
+                self.custom_chord_notes_data[i]['osc_idx'] = -1 # Correct data if inconsistent
+
+            osc_combo.pack(side=tk.TOP, pady=1)
+            # When an item is selected, we need to find its index based on the name
+            osc_combo.bind('<<ComboboxSelected>>', 
+                           lambda e, idx=i, cb=osc_combo: self.on_custom_note_param_change(idx, 'osc_idx', cb.get()))
+
             remove_btn = ttk.Button(note_ui_frame, text="-", width=1, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
             remove_btn.pack(side=tk.TOP, pady=1)
         
@@ -859,7 +944,7 @@ class ChordGeneratorApp:
         self.custom_notes_canvas.configure(scrollregion=self.custom_notes_canvas.bbox("all"))
 
     def on_custom_note_param_change(self, note_idx: int, param_type: str, new_value):
-        """Called when a note's pitch or octave adjustment is changed in the UI."""
+        """Called when a note\'s pitch or octave adjustment is changed in the UI."""
         if note_idx < len(self.custom_chord_notes_data):
             # Ensure the new_value for octave_adjust is an int if coming from spinbox command
             if param_type == 'octave_adjust':
@@ -877,6 +962,25 @@ class ChordGeneratorApp:
                 self.custom_chord_notes_data[note_idx]['pitch'] = str(new_value)
             elif param_type == 'octave_adjust':
                  self.custom_chord_notes_data[note_idx]['octave_adjust'] = new_value # Already int
+            elif param_type == 'osc_idx':
+                # new_value here is the string from combobox, e.g., "Master/All" or an oscillator name
+                if new_value == "Master/All":
+                    self.custom_chord_notes_data[note_idx]['osc_idx'] = -1
+                else:
+                    # Find the oscillator index by its name
+                    found_osc_idx = -1
+                    for idx, osc in enumerate(self.chord_generator.oscillators):
+                        if osc.name == new_value:
+                            found_osc_idx = idx
+                            break
+                    if found_osc_idx != -1:
+                        self.custom_chord_notes_data[note_idx]['osc_idx'] = found_osc_idx
+                    else:
+                        print(f"Warning: Could not find oscillator with name '{new_value}'. Defaulting to Master/All.")
+                        self.custom_chord_notes_data[note_idx]['osc_idx'] = -1
+                        # Update the combobox display back to Master/All if parsing fails
+                        # This requires getting the specific combobox, which is possible if stored or passed.
+                        # For now, data is corrected, UI will update on next full refresh.
             
             if self.type_var.get() != "-- Custom --":
                 self.type_var.set("-- Custom --")
@@ -886,7 +990,7 @@ class ChordGeneratorApp:
         """Adds a new default note to the custom chord structure and updates UI."""
         new_note_pitch = self.root_var.get() # Default to current root note
         new_note_octave_adjust = 0
-        self.custom_chord_notes_data.append({'pitch': new_note_pitch, 'octave_adjust': new_note_octave_adjust})
+        self.custom_chord_notes_data.append({'pitch': new_note_pitch, 'octave_adjust': new_note_octave_adjust, 'osc_idx': -1 })
         
         if self.type_var.get() != "-- Custom --":
             self.type_var.set("-- Custom --")
@@ -905,13 +1009,28 @@ class ChordGeneratorApp:
     def add_oscillator(self):
         """Add a new oscillator"""
         index = self.chord_generator.add_oscillator()
+        self.chord_generator.oscillators[index].name = f"Osc {index + 1}" # Assign default name
         self.init_oscillator_controls(index)
         self.create_oscillator_frame(self.oscillator_frame, index)
         self.update_waveform_preview(index)
+        self.update_custom_chord_note_ui() # Refresh note UIs to include new oscillator
     
     def remove_oscillator(self, index):
         """Remove an oscillator"""
+        removed_osc_globally_unique_id = None # Placeholder if we need to identify it beyond index
+        num_oscs_before_removal = len(self.chord_generator.oscillators)
+
         if self.chord_generator.remove_oscillator(index):
+            # Adjust osc_idx in custom_chord_notes_data due to removal
+            for note_data in self.custom_chord_notes_data:
+                current_assigned_idx = note_data.get('osc_idx', -1)
+                if current_assigned_idx == -1: # Master/All, no change needed
+                    continue
+                if current_assigned_idx == index: # Was assigned to the removed oscillator
+                    note_data['osc_idx'] = -1 # Revert to Master/All
+                elif current_assigned_idx > index: # Was assigned to an oscillator that shifted down
+                    note_data['osc_idx'] = current_assigned_idx - 1
+
             # Remove control variables
             for var_list in [self.wave_vars, self.amp_vars, self.detune_vars,
                            self.attack_vars, self.decay_vars, self.sustain_vars,
@@ -942,6 +1061,7 @@ class ChordGeneratorApp:
             for i in range(len(self.chord_generator.oscillators)):
                 self.create_oscillator_frame(self.oscillator_frame, i)
                 self.update_waveform_preview(i)
+            self.update_custom_chord_note_ui() # Refresh note UIs for new osc list
 
     def on_root_or_type_change(self, *args):
         """Handles changes to root note or chord type, updating custom chord data and UI."""

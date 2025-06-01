@@ -5,7 +5,11 @@ class Oscillator:
     WAVEFORMS = ['sine', 'square', 'sawtooth', 'triangle']
     EQ_BAND_FREQUENCIES = [60, 170, 310, 600, 1000, 3000, 6000, 12000]  # Standard 8-band EQ frequencies
     
+    _osc_count = 0 # Class variable to ensure unique default names
+
     def __init__(self):
+        Oscillator._osc_count += 1
+        self.name = f"Oscillator {Oscillator._osc_count}" # Default name
         self.waveform = 'sine'
         self.frequency = 440.0  # A4 note
         self.amplitude = 0.5
