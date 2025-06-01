@@ -17,6 +17,7 @@ matplotlib.use('TkAgg')
 from sequencer_ui import SequencerUI # Import the new SequencerUI class
 from oscillator import Oscillator # Import the Oscillator class
 from oscillator_renamer import OscillatorRenamerDialog # Import the new dialog
+from waveform_sculptor import WaveformSculptor # Import the WaveformSculptor
 
 class ChordGenerator:
     NOTE_FREQUENCIES = {
@@ -200,6 +201,7 @@ class ChordGeneratorApp:
         # Initialize visualization variables
         self.waveform_plots = {}
         self.waveform_canvases = {}
+        self.oscillator_ui_elements = {} # To store UI elements like wave_menu for each oscillator
         
         # Initialize audio components
         self.chord_generator = ChordGenerator()
@@ -391,39 +393,24 @@ class ChordGeneratorApp:
     def create_oscillator_frame(self, parent, index):
         """Create a frame for a single oscillator"""
         osc = self.chord_generator.oscillators[index]
-        # Use the oscillator's name for the LabelFrame text
         osc_frame = ttk.LabelFrame(parent, text=osc.name, padding="1")
         osc_frame.grid(row=index, column=0, sticky="ew", padx=1, pady=1)
-        osc_frame.grid_columnconfigure(1, weight=1) # Main content area
-        osc_frame.grid_columnconfigure(0, weight=1) # Ensure label frame text area also expands
+        osc_frame.grid_columnconfigure(1, weight=1) 
+        osc_frame.grid_columnconfigure(0, weight=1) 
 
-        # The rest of the frame content (preview, controls) starts from row 0 within this osc_frame
-        # This means the previous logic of passing start_row to create_waveform_preview might need adjustment
-        # if we are not putting an editable name label inside anymore.
+        # Initialize UI elements dictionary for this oscillator if it doesn't exist
+        if index not in self.oscillator_ui_elements:
+            self.oscillator_ui_elements[index] = {}
 
         if len(self.chord_generator.oscillators) > 1:
             remove_btn = ttk.Button(osc_frame, text="X",
                                   command=lambda i=index: self.remove_oscillator(i),
                                   width=2)
-            # Place remove button neatly, e.g., at the top-right of the content area
-            # If LabelFrame text is dynamic, this button should be inside.
-            # For simplicity, let's assume it's part of the main content grid of osc_frame.
-            # It needs to be added to a specific row/column in osc_frame's internal grid.
-            # Let's put it next to where the name *would* have been if it was editable here.
-            # Grid it to the LabelFrame itself if it should appear on the border, else manage internally.
-            # For now, let's try to make it appear on the top right of the content.
-            # This is often done by having a sub-frame or careful grid placement.
-
-            # Simplification: Place it on the first row, last column of internal grid of osc_frame
-            # We need to define how osc_frame's columns are structured. Let's say 2 columns.
-            osc_frame.grid_columnconfigure(0, weight=1) # For controls
-            osc_frame.grid_columnconfigure(1, weight=0) # For remove button
             remove_btn.grid(row=0, column=1, padx=1, pady=0, sticky="ne") 
 
-        self.create_waveform_preview(osc_frame, index, base_row=0) # Pass base_row for internal gridding
+        self.create_waveform_preview(osc_frame, index, base_row=0) 
         
         basic_frame = ttk.Frame(osc_frame)
-        # Basic frame now starts at row 1 if preview is at row 0
         basic_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=0)
         
         enable_cb = ttk.Checkbutton(basic_frame, text="On",
@@ -431,12 +418,16 @@ class ChordGeneratorApp:
                                   command=lambda i=index: self.update_oscillator(i))
         enable_cb.grid(row=0, column=0, padx=(1,0))
         
-        ttk.Label(basic_frame, text="Wave:").grid(row=0, column=1, padx=(2,0))
+        wave_label = ttk.Label(basic_frame, text="Wave:") # Create the label
+        wave_label.grid(row=0, column=1, padx=(2,0))
+        self.oscillator_ui_elements[index]['wave_label'] = wave_label # Store it
+        
         wave_menu = ttk.Combobox(basic_frame, textvariable=self.wave_vars[index],
-                                values=list(self.chord_generator.oscillators[0].waveform_definitions.keys()),
+                                values=list(self.chord_generator.oscillators[index].waveform_definitions.keys()),
                                 width=8)
         wave_menu.grid(row=0, column=2, padx=(0,1))
         wave_menu.bind('<<ComboboxSelected>>', lambda e, i=index: self.update_waveform_preview(i))
+        self.oscillator_ui_elements[index]['wave_menu'] = wave_menu # Store combobox
         
         self.create_waveform_tooltip(wave_menu, index)
         
@@ -444,6 +435,7 @@ class ChordGeneratorApp:
                                   variable=self.solo_vars[index],
                                   command=lambda i=index: self.toggle_solo(i))
         solo_cb.grid(row=0, column=3, padx=1)
+        self.oscillator_ui_elements[index]['solo_button'] = solo_cb # Store solo button
         
         ttk.Label(basic_frame, text="Amp:").grid(row=0, column=4, padx=(2,0))
         amp_scale = ttk.Scale(basic_frame, from_=0, to=1,
@@ -521,41 +513,90 @@ class ChordGeneratorApp:
         
         canvas = FigureCanvasTkAgg(fig, master=parent)
         canvas.draw()
-        canvas.get_tk_widget().grid(row=base_row, column=0, columnspan=1, padx=1, pady=0, sticky="ew") # columnspan 1 if remove is in col 1
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.grid(row=base_row, column=0, columnspan=1, padx=1, pady=0, sticky="ew") # columnspan 1 if remove is in col 1
+        # Bind click to open sculptor
+        canvas_widget.bind("<Button-1>", lambda event, i=index: self.open_waveform_sculptor(oscillator_index=i))
         
         self.waveform_canvases[index] = canvas
     
     def update_waveform_preview(self, index):
         """Update the waveform preview for an oscillator"""
-        waveform = self.wave_vars[index].get()
+        if index not in self.waveform_plots or index not in self.waveform_canvases or index not in self.oscillator_ui_elements:
+            return
+            
         osc = self.chord_generator.oscillators[index]
-        wave_def = osc.waveform_definitions.get(waveform, osc.waveform_definitions["sine"])
-        
-        t = np.linspace(0, 1, 1000)
-        if wave_def["type"] == "basic":
-            if waveform == 'sine':
-                y = np.sin(2 * np.pi * t)
-            elif waveform == 'square':
-                y = np.sign(np.sin(2 * np.pi * t))
-            elif waveform == 'sawtooth':
-                y = 2 * (t - np.floor(0.5 + t))
-            else:  # triangle
-                y = 2 * np.abs(2 * (t - np.floor(0.5 + t))) - 1
+        preview_points = []
+        num_preview_points = 100 
+
+        # Update Wave label if live editing
+        wave_label_widget = self.oscillator_ui_elements[index].get('wave_label')
+        if wave_label_widget:
+            if osc.is_live_editing:
+                wave_label_widget.config(text="Wave (Live):")
+            else:
+                wave_label_widget.config(text="Wave:")
+
+        if osc.is_live_editing and osc.live_edit_points and len(osc.live_edit_points) > 0:
+            # Use live edit points for preview
+            # We need to interpolate these to num_preview_points if their length differs
+            # or just plot them directly if their length is manageable (e.g. 16 from sculptor)
+            # For consistency, let's resample/interpolate to num_preview_points.
+            live_pts = np.array(osc.live_edit_points)
+            if len(live_pts) == num_preview_points:
+                preview_points = live_pts
+            elif len(live_pts) > 0:
+                x_defined = np.linspace(0, 1, len(live_pts), endpoint=False)
+                x_target = np.linspace(0, 1, num_preview_points, endpoint=False)
+                preview_points = np.interp(x_target, x_defined, live_pts)
+            else: # Should not happen if osc.live_edit_points check passed len > 0
+                preview_points = np.zeros(num_preview_points)
         else:
-            y = np.zeros_like(t)
-            for harmonic in wave_def["harmonics"]:
-                y += harmonic["amplitude"] * np.sin(2 * np.pi * harmonic["frequency"] * t)
-            if len(wave_def["harmonics"]) > 0:
-                y = y / max(abs(y.min()), abs(y.max()))
+            # Use the oscillator's currently selected defined waveform
+            current_waveform_name = self.wave_vars[index].get()
+            preview_points = osc.get_waveform_cycle_points(current_waveform_name, num_preview_points)
+
+        if not isinstance(preview_points, np.ndarray):
+            preview_points = np.array(preview_points)
         
-        self.waveform_plots[index].set_ydata(y)
+        if preview_points.size == 0:
+            # print(f"Warning: No preview points generated for osc {index}. Defaulting to zeros.")
+            preview_points = np.zeros(num_preview_points)
+        
+        # Ensure y_data for plot has the same number of points as x_data used by plot
+        # The plot in create_waveform_preview uses t = np.linspace(0, 1, 1000)
+        # So we must ensure preview_points has 1000 samples or update the plot's x_data too.
+        # Let's adjust the existing x_data or create new x_data based on num_preview_points.
+        
+        # The plot object (self.waveform_plots[index]) expects x and y data.
+        # If its original x data (t) had a different number of points than num_preview_points,
+        # we should update both x and y data for the plot, or ensure they match.
+        # For simplicity, the preview plot just needs to show the shape, so 0..N-1 for x is fine.
+        plot_x_data = np.arange(len(preview_points))
+
+        self.waveform_plots[index].set_data(plot_x_data, preview_points) # Update both x and y
+        
+        # Adjust axes if necessary, e.g., if number of points changes x-scale
+        ax = self.waveform_canvases[index].figure.axes[0]
+        ax.set_xlim(plot_x_data.min(), plot_x_data.max() if len(plot_x_data) > 1 else 1)
+        min_y = preview_points.min()
+        max_y = preview_points.max()
+        ax.set_ylim(min(min_y, -1.1) - 0.1, max(max_y, 1.1) + 0.1) # Dynamic Y-axis with padding
+        
         self.waveform_canvases[index].draw()
     
     def create_waveform_tooltip(self, widget, index):
         """Create tooltip for waveform description"""
         def show_tooltip(event):
-            waveform = self.wave_vars[index].get()
-            description = self.chord_generator.oscillators[index].waveform_definitions[waveform]["description"]
+            if not (0 <= index < len(self.chord_generator.oscillators)):
+                return # Invalid index
+
+            osc = self.chord_generator.oscillators[index]
+            waveform_name = self.wave_vars[index].get()
+            
+            # Safely get waveform definition and then its description
+            wave_def = osc.waveform_definitions.get(waveform_name, {})
+            description = wave_def.get("description", "N/A") # Default to N/A if no description
             
             x = widget.winfo_rootx() + 25
             y = widget.winfo_rooty() + 20
@@ -645,9 +686,20 @@ class ChordGeneratorApp:
 
     def update_oscillator(self, index):
         """Update all oscillator parameters when controls change"""
+        if not (0 <= index < len(self.chord_generator.oscillators)):
+            print(f"Error: update_oscillator called with invalid index {index}")
+            return
+            
         osc = self.chord_generator.oscillators[index]
         osc.enabled = self.enabled_vars[index].get()
-        osc.waveform = self.wave_vars[index].get()
+        new_waveform_name = self.wave_vars[index].get()
+        if osc.waveform != new_waveform_name:
+            osc.waveform = new_waveform_name
+            # If the waveform changed, live editing should be implicitly turned off
+            # as the user has selected a defined waveform.
+            if osc.is_live_editing:
+                osc.set_live_edit_data(is_active=False)
+
         osc.amplitude = self.amp_vars[index].get()
         osc.detune = self.detune_vars[index].get()
         osc.attack = self.attack_vars[index].get()
@@ -657,6 +709,9 @@ class ChordGeneratorApp:
         osc.filter_cutoff = self.cutoff_vars[index].get()
         osc.filter_resonance = self.resonance_vars[index].get()
         osc.pan = self.pan_vars[index].get()
+        
+        # After updating oscillator state, refresh its preview
+        self.update_waveform_preview(index)
     
     def update_oscillator_eq(self, osc_index, eq_band_index):
         """Update a specific EQ band for an oscillator."""
@@ -1023,8 +1078,9 @@ class ChordGeneratorApp:
             if index in self.waveform_plots: del self.waveform_plots[index]
             if index in self.waveform_canvases: del self.waveform_canvases[index]
             
-            # Refresh UI
-            self.update_oscillator_frames_after_rename() # Rebuild all frames
+            # self.oscillator_ui_elements.pop(index, None) # remove specific index before full rebuild
+            # Refresh UI - update_oscillator_frames_after_rename will clear and rebuild self.oscillator_ui_elements
+            self.update_oscillator_frames_after_rename() 
             self.update_custom_chord_note_ui() 
         else:
             messagebox.showwarning("Remove Oscillator", "Cannot remove the last oscillator.")
@@ -1076,10 +1132,97 @@ class ChordGeneratorApp:
         for widget in self.oscillator_frame.winfo_children():
             widget.destroy()
         
+        self.oscillator_ui_elements.clear() # Clear stored UI elements before rebuilding
+        
         # Re-create all oscillator frames. This will use the new names.
         for i in range(len(self.chord_generator.oscillators)):
             self.create_oscillator_frame(self.oscillator_frame, i)
             self.update_waveform_preview(i) # Ensure preview is also updated
+
+    def open_waveform_sculptor(self, oscillator_index=None):
+        """Opens the waveform sculptor window."""
+        sculptor_window = WaveformSculptor(self.root, 
+                                           main_app_ref=self, 
+                                           oscillator_index=oscillator_index)
+        sculptor_window.grab_set() # Make it modal to focus user interaction
+
+        def on_sculptor_close():
+            print(f"Sculptor window for osc_idx {oscillator_index} is closing.")
+            if oscillator_index is not None:
+                try:
+                    # No longer automatically turn off live editing on close.
+                    # The live state persists if "Apply to Oscillator" was used.
+                    # osc = self.chord_generator.oscillators[oscillator_index]
+                    # if osc.is_live_editing: 
+                    #     osc.set_live_edit_data(is_active=False)
+                    #     print(f"Live editing turned off for oscillator {oscillator_index + 1}.")
+                    
+                    # Ensure main UI preview is up-to-date with the oscillator's current state (which might be live)
+                    self.update_waveform_preview(oscillator_index) 
+                    # Removing automatic preview_chord on close, sound should reflect last applied state.
+                    # if hasattr(self, 'preview_chord'): 
+                    #     self.preview_chord()
+                except IndexError:
+                    print(f"Warning: Could not access oscillator {oscillator_index} on sculptor close for UI update.")
+                except Exception as e:
+                    print(f"Error during sculptor close for osc {oscillator_index} UI update: {e}")
+            sculptor_window.destroy()
+
+        sculptor_window.protocol("WM_DELETE_WINDOW", on_sculptor_close)
+
+    def populate_waveform_dropdown(self, reload_definitions=False):
+        """
+        Called by WaveformSculptor (or other parts of the app) to indicate 
+        new waveforms might be available and oscillator dropdowns need refreshing.
+        Assumes Oscillator class has a method load_waveform_definitions(force_reload=True)
+        which reloads its self.waveform_definitions dictionary from the JSON file.
+        """
+        if reload_definitions:
+            print("Main app: Received request to reload waveform definitions.")
+            # Instruct each oscillator to reload its waveform definitions
+            for osc_idx, osc in enumerate(self.chord_generator.oscillators):
+                if hasattr(osc, 'load_waveform_definitions'):
+                    try:
+                        osc.load_waveform_definitions(force_reload=True)
+                        # print(f"Oscillator {osc_idx} reloaded definitions.")
+                    except Exception as e:
+                        print(f"Error reloading definitions for oscillator {osc_idx}: {e}")
+                else:
+                    print(f"Warning: Oscillator {osc_idx} does not have 'load_waveform_definitions' method.")
+
+            # Update the combobox values for each oscillator
+            for i in range(len(self.chord_generator.oscillators)):
+                if i in self.oscillator_ui_elements and 'wave_menu' in self.oscillator_ui_elements[i]:
+                    wave_menu_combobox = self.oscillator_ui_elements[i]['wave_menu']
+                    current_osc = self.chord_generator.oscillators[i]
+                    
+                    # Ensure waveform_definitions is populated
+                    if hasattr(current_osc, 'waveform_definitions') and current_osc.waveform_definitions:
+                        new_wave_values = list(current_osc.waveform_definitions.keys())
+                    else:
+                        new_wave_values = [] # Default to empty list if no definitions found
+                        print(f"Warning: Oscillator {i} has no waveform definitions after reload attempt.")
+
+                    current_selection = self.wave_vars[i].get()
+                    
+                    wave_menu_combobox['values'] = new_wave_values
+                    
+                    if current_selection not in new_wave_values and new_wave_values:
+                        self.wave_vars[i].set(new_wave_values[0])
+                        wave_menu_combobox.set(new_wave_values[0])
+                    elif not new_wave_values:
+                        self.wave_vars[i].set("")
+                        wave_menu_combobox.set("")
+                    else: # Selection is valid or new_wave_values is empty
+                         wave_menu_combobox.set(current_selection) 
+                else:
+                    print(f"Warning: Could not find wave_menu for oscillator {i} to refresh.")
+            
+            print("Main app: Waveform dropdowns updated.")
+            # After updating values, a general UI refresh for oscillators might be needed
+            # if other parts depend on these definitions directly.
+            # For now, just updating the comboboxes.
+            # self.update_oscillator_frames_after_rename() # This is too heavy, avoid if possible
 
 if __name__ == "__main__":
     # Reset Oscillator count when app starts, if desired for consistent default naming like "Oscillator 1", "Oscillator 2" etc.
