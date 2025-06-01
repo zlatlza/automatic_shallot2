@@ -1,0 +1,278 @@
+{
+    "major": {
+        "intervals": [0, 4, 7],
+        "description": "Major triad (1, 3, 5)"
+    },
+    "minor": {
+        "intervals": [0, 3, 7],
+        "description": "Minor triad (1, ♭3, 5)"
+    },
+    "diminished": {
+        "intervals": [0, 3, 6],
+        "description": "Diminished triad (1, ♭3, ♭5)"
+    },
+    "augmented": {
+        "intervals": [0, 4, 8],
+        "description": "Augmented triad (1, 3, #5)"
+    },
+    "major7": {
+        "intervals": [0, 4, 7, 11],
+        "description": "Major seventh (1, 3, 5, 7)"
+    },
+    "minor7": {
+        "intervals": [0, 3, 7, 10],
+        "description": "Minor seventh (1, ♭3, 5, ♭7)"
+    },
+    "dominant7": {
+        "intervals": [0, 4, 7, 10],
+        "description": "Dominant seventh (1, 3, 5, ♭7)"
+    },
+    "diminished7": {
+        "intervals": [0, 3, 6, 9],
+        "description": "Diminished seventh (1, ♭3, ♭5, ♭♭7)"
+    },
+    "half_diminished7": {
+        "intervals": [0, 3, 6, 10],
+        "description": "Half-diminished seventh (1, ♭3, ♭5, ♭7)"
+    },
+    "minor_major7": {
+        "intervals": [0, 3, 7, 11],
+        "description": "Minor-major seventh (1, ♭3, 5, 7)"
+    },
+    "augmented7": {
+        "intervals": [0, 4, 8, 10],
+        "description": "Augmented seventh (1, 3, #5, ♭7)"
+    },
+    "sus2": {
+        "intervals": [0, 2, 7],
+        "description": "Suspended 2nd (1, 2, 5)"
+    },
+    "sus4": {
+        "intervals": [0, 5, 7],
+        "description": "Suspended 4th (1, 4, 5)"
+    },
+    "add9": {
+        "intervals": [0, 4, 7, 14],
+        "description": "Added ninth (1, 3, 5, 9)"
+    },
+    "add11": {
+        "intervals": [0, 4, 7, 17],
+        "description": "Added eleventh (1, 3, 5, 11)"
+    },
+    "major9": {
+        "intervals": [0, 4, 7, 11, 14],
+        "description": "Major ninth (1, 3, 5, 7, 9)"
+    },
+    "minor9": {
+        "intervals": [0, 3, 7, 10, 14],
+        "description": "Minor ninth (1, ♭3, 5, ♭7, 9)"
+    },
+    "dominant9": {
+        "intervals": [0, 4, 7, 10, 14],
+        "description": "Dominant ninth (1, 3, 5, ♭7, 9)"
+    },
+    "major6": {
+        "intervals": [0, 4, 7, 9],
+        "description": "Major sixth (1, 3, 5, 6)"
+    },
+    "minor6": {
+        "intervals": [0, 3, 7, 9],
+        "description": "Minor sixth (1, ♭3, 5, 6)"
+    },
+    "sixth_ninth": {
+        "intervals": [0, 4, 7, 9, 14],
+        "description": "Sixth/Ninth (1, 3, 5, 6, 9)"
+    },
+    "power": {
+        "intervals": [0, 7],
+        "description": "Power chord (1, 5)"
+    },
+    "quartal": {
+        "intervals": [0, 5, 10],
+        "description": "Quartal (stacked perfect fourths)"
+    },
+    "quintal": {
+        "intervals": [0, 7, 14],
+        "description": "Quintal (stacked perfect fifths)"
+    },
+    "major11": {
+        "intervals": [0, 4, 7, 11, 14, 17],
+        "description": "Major eleventh (1, 3, 5, 7, 9, 11)"
+    },
+    "minor11": {
+        "intervals": [0, 3, 7, 10, 14, 17],
+        "description": "Minor eleventh (1, ♭3, 5, ♭7, 9, 11)"
+    },
+    "dominant11": {
+        "intervals": [0, 4, 7, 10, 14, 17],
+        "description": "Dominant eleventh (1, 3, 5, ♭7, 9, 11)"
+    },
+    "major13": {
+        "intervals": [0, 4, 7, 11, 14, 17, 21],
+        "description": "Major thirteenth (1, 3, 5, 7, 9, 11, 13)"
+    },
+    "minor13": {
+        "intervals": [0, 3, 7, 10, 14, 17, 21],
+        "description": "Minor thirteenth (1, ♭3, 5, ♭7, 9, 11, 13)"
+    },
+    "dominant13": {
+        "intervals": [0, 4, 7, 10, 14, 17, 21],
+        "description": "Dominant thirteenth (1, 3, 5, ♭7, 9, 11, 13)"
+    },
+    "augmented_major7": {
+        "intervals": [0, 4, 8, 11],
+        "description": "Augmented major seventh (1, 3, #5, 7)"
+    },
+    "dominant7b5": {
+        "intervals": [0, 4, 6, 10],
+        "description": "Dominant seventh flat five (1, 3, ♭5, ♭7)"
+    },
+    "dominant7sharp5": {
+        "intervals": [0, 4, 8, 10],
+        "description": "Dominant seventh sharp five (1, 3, #5, ♭7)"
+    },
+    "dominant7b9": {
+        "intervals": [0, 4, 7, 10, 13],
+        "description": "Dominant seventh flat nine (1, 3, 5, ♭7, ♭9)"
+    },
+    "dominant7sharp9": {
+        "intervals": [0, 4, 7, 10, 15],
+        "description": "Dominant seventh sharp nine (1, 3, 5, ♭7, #9)"
+    },
+    "dominant7b5b9": {
+        "intervals": [0, 4, 6, 10, 13],
+        "description": "Dominant seventh flat five flat nine (1, 3, ♭5, ♭7, ♭9)"
+    },
+    "altered7": {
+        "intervals": [0, 4, 8, 10, 13, 15],
+        "description": "Altered dominant (1, 3, #5, ♭7, ♭9, #9)"
+    },
+    "suspended7": {
+        "intervals": [0, 5, 7, 10],
+        "description": "Suspended seventh (1, 4, 5, ♭7)"
+    },
+    "suspended9": {
+        "intervals": [0, 5, 7, 10, 14],
+        "description": "Suspended ninth (1, 4, 5, ♭7, 9)"
+    },
+    "add2": {
+        "intervals": [0, 2, 4, 7],
+        "description": "Added second (1, 2, 3, 5)"
+    },
+    "add4": {
+        "intervals": [0, 4, 5, 7],
+        "description": "Added fourth (1, 3, 4, 5)"
+    },
+    "major69": {
+        "intervals": [0, 4, 7, 9, 14],
+        "description": "Major sixth/ninth (1, 3, 5, 6, 9)"
+    },
+    "minor69": {
+        "intervals": [0, 3, 7, 9, 14],
+        "description": "Minor sixth/ninth (1, ♭3, 5, 6, 9)"
+    },
+    "major7sharp11": {
+        "intervals": [0, 4, 7, 11, 18],
+        "description": "Major seventh sharp eleven (1, 3, 5, 7, #11)"
+    },
+    "dominant7sharp11": {
+        "intervals": [0, 4, 7, 10, 18],
+        "description": "Dominant seventh sharp eleven (1, 3, 5, ♭7, #11)"
+    },
+    "minor_major9": {
+        "intervals": [0, 3, 7, 11, 14],
+        "description": "Minor major ninth (1, ♭3, 5, 7, 9)"
+    },
+    "diminished_major7": {
+        "intervals": [0, 3, 6, 11],
+        "description": "Diminished major seventh (1, ♭3, ♭5, 7)"
+    },
+    "dominant7sus4": {
+        "intervals": [0, 5, 7, 10],
+        "description": "Dominant seventh suspended fourth (1, 4, 5, ♭7)"
+    },
+    "french6": {
+        "intervals": [0, 4, 6, 10],
+        "description": "French sixth (1, 3, ♭5, ♭7)"
+    },
+    "german6": {
+        "intervals": [0, 4, 7, 10],
+        "description": "German sixth (1, 3, 5, ♭7)"
+    },
+    "italian6": {
+        "intervals": [0, 4, 10],
+        "description": "Italian sixth (1, 3, ♭7)"
+    },
+    "neapolitan": {
+        "intervals": [0, 3, 7],
+        "description": "Neapolitan chord (♭2, 4, ♭6 in first inversion)"
+    },
+    "dominant7b9b13": {
+        "intervals": [0, 4, 7, 10, 13, 20],
+        "description": "Dominant seventh flat nine flat thirteen (1, 3, 5, ♭7, ♭9, ♭13)"
+    },
+    "lydian": {
+        "intervals": [0, 4, 7, 11, 18],
+        "description": "Lydian chord (1, 3, 5, 7, #11)"
+    },
+    "whole_tone": {
+        "intervals": [0, 4, 8, 10],
+        "description": "Whole tone chord (1, 3, #5, ♭7)"
+    },
+    "augmented_triad_major7": {
+        "intervals": [0, 4, 8, 11],
+        "description": "Augmented triad major seventh (1, 3, #5, 7)"
+    },
+    "dominant9sus4": {
+        "intervals": [0, 5, 7, 10, 14],
+        "description": "Dominant ninth suspended fourth (1, 4, 5, ♭7, 9)"
+    },
+    "major7b5": {
+        "intervals": [0, 4, 6, 11],
+        "description": "Major seventh flat five (1, 3, ♭5, 7)"
+    },
+    "minor_add9": {
+        "intervals": [0, 3, 7, 14],
+        "description": "Minor add ninth (1, ♭3, 5, 9)"
+    },
+    "dominant13b9": {
+        "intervals": [0, 4, 7, 10, 13, 17, 21],
+        "description": "Dominant thirteenth flat nine (1, 3, 5, ♭7, ♭9, 11, 13)"
+    },
+    "dream": {
+        "intervals": [0, 5, 6, 7],
+        "description": "Dream chord (1, 4, ♭5, 5)"
+    },
+    "elektra": {
+        "intervals": [0, 7, 13, 19],
+        "description": "Elektra chord (1, 5, ♭10, ♭13)"
+    },
+    "farben": {
+        "intervals": [0, 8, 11, 16, 21],
+        "description": "Farben chord (1, #5, 7, #9, 13)"
+    },
+    "hendrix": {
+        "intervals": [0, 4, 7, 10, 15],
+        "description": "Hendrix chord (Dominant seventh sharp nine) (1, 3, 5, ♭7, #9)"
+    },
+    "mu": {
+        "intervals": [0, 2, 4, 7],
+        "description": "Mu chord (1, 2, 3, 5)"
+    },
+    "mystic": {
+        "intervals": [0, 6, 10, 16, 21],
+        "description": "Mystic chord (1, ♭5, ♭7, #9, 13)"
+    },
+    "petrushka": {
+        "intervals": [0, 1, 4, 6],
+        "description": "Petrushka chord (1, ♭2, 3, ♭5)"
+    },
+    "so_what": {
+        "intervals": [0, 5, 10, 15, 19],
+        "description": "So What chord (Quartal with added notes) (1, 4, 7, ♭10, 12)"
+    },
+    "tristan": {
+        "intervals": [0, 4, 8, 10],
+        "description": "Tristan chord (1, 3, #5, ♭7)"
+    }
+} 
