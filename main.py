@@ -184,7 +184,7 @@ class ChordGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Automatic Shallot v0.4")
-        self.root.geometry("887x468")
+        self.root.geometry("887x503")
         
         self.root.minsize(600, 400)
         self.root.grid_rowconfigure(0, weight=1)
@@ -912,9 +912,9 @@ class ChordGeneratorApp:
     def update_custom_chord_note_ui(self):
         """Dynamically create/update UI controls for each note in self.custom_chord_notes_data, with horizontal scrolling."""
         
-        # If canvas and content frame don\'t exist, create them within self.custom_notes_frame
+        # If canvas and content frame don't exist, create them within self.custom_notes_frame
         if not self.custom_notes_canvas:
-            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=90)
+            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=130) # Increased height
             h_scrollbar = ttk.Scrollbar(self.custom_notes_frame, orient=tk.HORIZONTAL, command=self.custom_notes_canvas.xview)
             self.custom_notes_canvas.configure(xscrollcommand=h_scrollbar.set)
             
@@ -988,7 +988,7 @@ class ChordGeneratorApp:
             osc_combo.bind('<<ComboboxSelected>>', 
                            lambda e, idx=i, cb=osc_combo: self.on_custom_note_param_change(idx, 'osc_idx', cb.get()))
 
-            remove_btn = ttk.Button(note_ui_frame, text="-", width=1, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
+            remove_btn = ttk.Button(note_ui_frame, text="X", width=2, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
             remove_btn.pack(side=tk.TOP, pady=1)
         
         self.custom_notes_content_frame.update_idletasks()
