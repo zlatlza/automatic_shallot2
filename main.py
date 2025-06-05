@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog # Added filedialog
 import numpy as np
 import pygame
 import pygame.mixer
@@ -86,14 +86,15 @@ class ChordGenerator:
         """Get the description of a chord type"""
         return self.chord_definitions.get(chord_type, {}).get("description", "")
     
-    def generate_chord(self, master_octave: int, notes_data: List[Dict], duration_ms: int = 1000, fade_out_ms: int = 100, master_volume: float = 1.0, master_mute: bool = False, soloed_osc_idx: int = -1) -> np.ndarray:
-        """ Generates a chord based on a list of notes, each with a pitch, octave adjustment, and oscillator assignment. """
+    def generate_chord(self, master_octave: int, notes_data: List[Dict], duration_ms: int = 1000, fade_out_ms: int = 100, master_volume: float = 1.0, master_mute: bool = False, soloed_osc_idx: int = -1, bpm: int = 120) -> np.ndarray:
+        """ Generates a chord based on a list of notes, each with a pitch, octave adjustment, oscillator assignment, and individual beat length. """
         
         if not notes_data:
             return np.array([]) 
 
-        total_duration = duration_ms + fade_out_ms
-        final_samples_shape = int(44100 * total_duration / 1000)
+        # Overall duration for the output buffer and main fade out
+        step_total_render_duration_ms = duration_ms + fade_out_ms
+        final_samples_shape = int(44100 * step_total_render_duration_ms / 1000)
         combined_note_samples = np.zeros(final_samples_shape)
 
         # Determine effective oscillators based on global solo and enabled states
@@ -105,10 +106,19 @@ class ChordGenerator:
         if not self.oscillators: # If no oscillators at all (e.g. all removed)
              return np.zeros((final_samples_shape, 2)) if self.sound_mode != 'mono' else np.zeros(final_samples_shape)
 
+        ms_per_beat = 60000.0 / bpm
+
         for note_info in notes_data:
             note_pitch_str = note_info['pitch']
             note_octave_adjust = note_info['octave_adjust']
             assigned_osc_idx_for_note = note_info.get('osc_idx', -1)
+            note_beat_length = note_info.get('beat_length', 1.0)
+
+            # Calculate note-specific duration in ms, capped by the step's main duration_ms
+            # This duration is for the active sound of the note before any step-level fade out.
+            current_note_actual_duration_ms = min(note_beat_length * ms_per_beat, duration_ms)
+            # Ensure a small positive duration if calculations result in zero or negative.
+            current_note_actual_duration_ms = max(1, int(current_note_actual_duration_ms))
 
             if note_pitch_str not in self.NOTE_FREQUENCIES:
                 print(f"Warning: Pitch {note_pitch_str} not found. Skipping note.")
@@ -116,8 +126,6 @@ class ChordGenerator:
 
             base_freq_for_note = self.NOTE_FREQUENCIES[note_pitch_str]
             current_note_freq = base_freq_for_note * (2 ** (master_octave - 4 + note_octave_adjust))
-            
-            note_samples_this_note = np.zeros(final_samples_shape)
             
             oscillators_to_use_for_this_note = []
             if assigned_osc_idx_for_note == -1: # Master/All
@@ -134,14 +142,25 @@ class ChordGenerator:
             if not oscillators_to_use_for_this_note:
                 continue # No active oscillator for this note, skip to next note
 
+            # This buffer is for accumulating one note's sound from potentially multiple oscillators.
+            # It's sized for the entire step because a note might be shorter than the step.
+            single_note_contribution_buffer = np.zeros(final_samples_shape)
+
             for osc in oscillators_to_use_for_this_note:
                 original_osc_freq = osc.frequency 
                 osc.frequency = current_note_freq
-                generated_samples = osc.generate_samples(total_duration)
+                # Generate samples for the note's specific duration
+                # The ADSR envelope within generate_samples will apply to this duration.
+                generated_samples_for_note = osc.generate_samples(current_note_actual_duration_ms)
                 osc.frequency = original_osc_freq 
-                note_samples_this_note += generated_samples
+                
+                # Add the generated samples to the start of this note's buffer
+                # If generated_samples_for_note is shorter than final_samples_shape, it's effectively padded with silence.
+                len_generated = len(generated_samples_for_note)
+                if len_generated > 0:
+                    single_note_contribution_buffer[:len_generated] += generated_samples_for_note
             
-            combined_note_samples += note_samples_this_note
+            combined_note_samples += single_note_contribution_buffer
 
         final_samples = combined_note_samples
         if final_samples.any():
@@ -181,10 +200,123 @@ class ChordGenerator:
         return stereo_output_samples
 
 class ChordGeneratorApp:
+    DARK_GREY = "#3C3C3C"
+    MEDIUM_GREY = "#4A4A4A"
+    LIGHT_GREY_FG = "#E0E0E0"
+    BUTTON_GREY = "#5A5A5A"
+    BUTTON_ACTIVE_GREY = "#6A6A6A"
+    CRIMSON = "#DC143C"
+    SLIDER_TROUGH_GREY = "#2A2A2A"
+    FIELD_BG_GREY = "#424242" # For combobox/spinbox fields
+    WHITE_ISH_TEXT = "#F0F0F0"
+
     def __init__(self, root):
         self.root = root
         self.root.title("Automatic Shallot v0.4")
-        self.root.geometry("887x503")
+        self.root.geometry("983x534")
+        self.root.configure(bg=self.DARK_GREY) # Root background
+
+        # --- Style Setup ---
+        style = ttk.Style(self.root)
+        # Using 'clam' as it's generally more customizable
+        # Available themes: style.theme_names() -> ('winnative', 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative')
+        try:
+            style.theme_use('clam')
+        except tk.TclError:
+            print("Clam theme not available, using default.")
+            # Fallback or use another theme if 'clam' isn't available
+
+        # General widget styling
+        style.configure('.', 
+                        background=self.DARK_GREY, 
+                        foreground=self.LIGHT_GREY_FG,
+                        font=('TkDefaultFont', 9)) # Adjusted font size for potentially better fit
+
+        style.configure('TFrame', background=self.DARK_GREY)
+        style.configure('TLabel', background=self.DARK_GREY, foreground=self.LIGHT_GREY_FG)
+        
+        style.configure('TLabelframe', 
+                        background=self.DARK_GREY, 
+                        foreground=self.LIGHT_GREY_FG, 
+                        bordercolor=self.MEDIUM_GREY,
+                        borderwidth=1) 
+        style.configure('TLabelframe.Label', 
+                        background=self.DARK_GREY, 
+                        foreground=self.LIGHT_GREY_FG)
+
+        # Button styling
+        style.configure('TButton', 
+                        background=self.BUTTON_GREY, 
+                        foreground=self.WHITE_ISH_TEXT, 
+                        bordercolor=self.MEDIUM_GREY,
+                        lightcolor=self.BUTTON_GREY, # For 3D effect with clam
+                        darkcolor=self.BUTTON_GREY,  # For 3D effect with clam
+                        padding=(6, 3)) # Added padding
+        style.map('TButton', 
+                  background=[('active', self.BUTTON_ACTIVE_GREY), ('pressed', self.BUTTON_ACTIVE_GREY)],
+                  foreground=[('active', self.WHITE_ISH_TEXT)])
+
+        # Checkbutton styling
+        style.configure('TCheckbutton', 
+                        background=self.DARK_GREY, 
+                        foreground=self.LIGHT_GREY_FG)
+        style.map('TCheckbutton',
+                  background=[('active', self.MEDIUM_GREY)],
+                  indicatorbackground=[('selected', self.CRIMSON)], # Try to make check mark crimson
+                  indicatorforeground=[('selected', self.WHITE_ISH_TEXT)])
+
+
+        # Combobox styling
+        style.configure('TCombobox', 
+                        fieldbackground=self.FIELD_BG_GREY, 
+                        background=self.BUTTON_GREY, # Arrow button background
+                        foreground=self.LIGHT_GREY_FG, 
+                        selectbackground=self.MEDIUM_GREY, # Background of selected item in dropdown
+                        selectforeground=self.WHITE_ISH_TEXT, # Text of selected item in dropdown
+                        arrowcolor=self.LIGHT_GREY_FG,
+                        bordercolor=self.MEDIUM_GREY)
+        style.map('TCombobox', 
+                  fieldbackground=[('readonly', self.FIELD_BG_GREY), ('focus', self.FIELD_BG_GREY)],
+                  background=[('readonly', self.BUTTON_GREY)], # Arrow button
+                  foreground=[('readonly', self.LIGHT_GREY_FG)])
+
+
+        # Spinbox styling
+        style.configure('TSpinbox', 
+                        fieldbackground=self.FIELD_BG_GREY, 
+                        background=self.BUTTON_GREY, # Button background
+                        foreground=self.LIGHT_GREY_FG, 
+                        arrowcolor=self.LIGHT_GREY_FG,
+                        bordercolor=self.MEDIUM_GREY)
+        style.map('TSpinbox', foreground=[('focus', self.WHITE_ISH_TEXT)])
+
+
+        # Scale (Slider) styling - Attempting Crimson thumb
+        # This is highly theme-dependent. For 'clam':
+        style.configure('Horizontal.TScale', 
+                        background=self.DARK_GREY, # Overall background
+                        troughcolor=self.SLIDER_TROUGH_GREY)
+        style.configure('Vertical.TScale', 
+                        background=self.DARK_GREY, 
+                        troughcolor=self.SLIDER_TROUGH_GREY)
+        
+        # Try to style the slider thumb itself
+        # The element name for slider thumb can be 'Horizontal.Scale.slider', 'Horizontal.Slider.thumb', etc.
+        # For 'clam', it's often 'Horizontal.Scale.slider' for the visual part.
+        style.configure('Horizontal.Scale.slider', background=self.CRIMSON, bordercolor=self.CRIMSON, lightcolor=self.CRIMSON, darkcolor=self.CRIMSON)
+        style.configure('Vertical.Scale.slider', background=self.CRIMSON, bordercolor=self.CRIMSON, lightcolor=self.CRIMSON, darkcolor=self.CRIMSON)
+        
+        # Scrollbar styling
+        style.configure("TScrollbar", 
+                        background=self.BUTTON_GREY, # Background of the scrollbar itself (not trough)
+                        troughcolor=self.SLIDER_TROUGH_GREY, 
+                        bordercolor=self.MEDIUM_GREY, 
+                        arrowcolor=self.LIGHT_GREY_FG)
+        style.map("TScrollbar", 
+                  background=[('active', self.BUTTON_ACTIVE_GREY)], 
+                  arrowcolor=[('pressed', self.CRIMSON)])
+
+        # --- End Style Setup ---
         
         self.root.minsize(600, 400)
         self.root.grid_rowconfigure(0, weight=1)
@@ -240,9 +372,61 @@ class ChordGeneratorApp:
         menubar.add_cascade(label="File", menu=file_menu)
         file_menu.add_command(label="Rename Oscillators...", command=self.open_rename_oscillators_dialog)
         file_menu.add_separator()
+        file_menu.add_command(label="Import Sequence...", command=self._import_sequence_dialog)
+        file_menu.add_command(label="Export Sequence...", command=self._export_sequence_dialog)
+        file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
         
         # Potentially other menus like Edit, View, Help can be added here
+
+    def _import_sequence_dialog(self):
+        """Opens a dialog to import a sequence from a .shallot file."""
+        if not self.sequencer_ui_instance:
+            messagebox.showerror("Error", "Sequencer UI is not available.")
+            return
+
+        filepath = filedialog.askopenfilename(
+            defaultextension=".shallot",
+            filetypes=[("Shallot Files", "*.shallot"), ("All Files", "*.*")],
+            title="Import Shallot Sequence File"
+        )
+        if not filepath:
+            return # User cancelled
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                sequence_text_content = f.read()
+            
+            self.sequencer_ui_instance.load_sequence_from_text(sequence_text_content)
+            messagebox.showinfo("Success", f"Sequence successfully imported from\\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Import Error", f"Failed to import sequence from {filepath}\\nError: {e}")
+
+    def _export_sequence_dialog(self):
+        """Opens a dialog to export the current sequence to a .shallot file."""
+        if not self.sequencer_ui_instance:
+            messagebox.showerror("Error", "Sequencer UI is not available.")
+            return
+
+        sequence_text_to_export = self.sequencer_ui_instance.get_sequence_as_text()
+        if not sequence_text_to_export.strip():
+            messagebox.showwarning("Export Warning", "Sequence is empty. Nothing to export.")
+            return
+            
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".shallot",
+            filetypes=[("Shallot Files", "*.shallot"), ("All Files", "*.*")],
+            title="Export Shallot Sequence File"
+        )
+        if not filepath:
+            return # User cancelled
+
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(sequence_text_to_export)
+            messagebox.showinfo("Success", f"Sequence successfully exported to\\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export sequence to {filepath}\\nError: {e}")
 
     def open_rename_oscillators_dialog(self):
         dialog = OscillatorRenamerDialog(self)
@@ -270,6 +454,7 @@ class ChordGeneratorApp:
         self.note_octave_vars = []
         self.note_pitch_vars = []
         self.note_osc_idx_vars = [] # For oscillator assignment per note
+        self.note_beat_length_vars = [] # For individual note beat lengths
         self.custom_chord_notes_ui_frames = []
         self.custom_chord_notes_data = []
         self.custom_notes_canvas = None # For horizontal scrolling of notes
@@ -308,7 +493,7 @@ class ChordGeneratorApp:
     def setup_gui(self):
         """Setup the main GUI layout"""
         # Left side - Oscillators and Sound Controls
-        left_frame = ttk.Frame(self.main_frame)
+        left_frame = ttk.Frame(self.main_frame) # main_frame gets style from root via ChordGeneratorApp init
         left_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         left_frame.grid_columnconfigure(0, weight=1)
         left_frame.grid_rowconfigure(1, weight=1)  # Make oscillator canvas expandable
@@ -348,9 +533,10 @@ class ChordGeneratorApp:
         export_btn.grid(row=0, column=2, padx=(2,0), pady=1, sticky="e")
         
         # Create scrollable canvas for oscillators
-        canvas = tk.Canvas(left_frame)
+        # This canvas is tk.Canvas, not ttk.Frame, so styled directly
+        canvas = tk.Canvas(left_frame, bg=self.DARK_GREY, highlightthickness=0) # Added bg and highlightthickness
         scrollbar = ttk.Scrollbar(left_frame, orient="vertical", command=canvas.yview)
-        self.oscillator_frame = ttk.Frame(canvas)
+        self.oscillator_frame = ttk.Frame(canvas) # This ttk.Frame will be styled
         
         canvas.configure(yscrollcommand=scrollbar.set)
         
@@ -499,22 +685,30 @@ class ChordGeneratorApp:
     
     def create_waveform_preview(self, parent, index, base_row=0):
         """Create a small waveform preview canvas, gridded at base_row"""
-        fig = Figure(figsize=(1.2, 0.4), dpi=70)
-        ax = fig.add_subplot(111)
+        fig = Figure(figsize=(1.2, 0.4), dpi=70, facecolor=self.DARK_GREY) # Figure background
+        ax = fig.add_subplot(111, facecolor=self.MEDIUM_GREY) # Axes background
         
         ax.set_xticks([])
         ax.set_yticks([])
-        
+        ax.spines['top'].set_color(self.LIGHT_GREY_FG) # Adjusting spine colors
+        ax.spines['bottom'].set_color(self.LIGHT_GREY_FG)
+        ax.spines['left'].set_color(self.LIGHT_GREY_FG)
+        ax.spines['right'].set_color(self.LIGHT_GREY_FG)
+        ax.tick_params(axis='x', colors=self.LIGHT_GREY_FG) # Though ticks are off, for consistency
+        ax.tick_params(axis='y', colors=self.LIGHT_GREY_FG)
+
         t = np.linspace(0, 1, 1000)
         y = np.sin(2 * np.pi * t)
-        self.waveform_plots[index] = ax.plot(t, y)[0]
+        self.waveform_plots[index] = ax.plot(t, y, color=self.CRIMSON)[0] # Waveform line color
         
         ax.set_ylim(-1.1, 1.1)
         
         canvas = FigureCanvasTkAgg(fig, master=parent)
         canvas.draw()
         canvas_widget = canvas.get_tk_widget()
-        canvas_widget.grid(row=base_row, column=0, columnspan=1, padx=1, pady=0, sticky="ew") # columnspan 1 if remove is in col 1
+        # Set background of the Tkinter widget holding the Matplotlib canvas
+        canvas_widget.config(bg=self.DARK_GREY, highlightthickness=0) 
+        canvas_widget.grid(row=base_row, column=0, columnspan=1, padx=1, pady=0, sticky="ew")
         # Bind click to open sculptor
         canvas_widget.bind("<Button-1>", lambda event, i=index: self.open_waveform_sculptor(oscillator_index=i))
         
@@ -737,14 +931,17 @@ class ChordGeneratorApp:
                 if solo_var.get():
                     current_solo_idx = idx
                     break
+            
+            current_bpm = self.sequencer_ui_instance.sequencer.bpm if self.sequencer_ui_instance else 120
 
             samples = self.chord_generator.generate_chord(
                 master_octave=self.octave_var.get(),
                 notes_data=current_notes_data,
-                duration_ms=1000,
+                duration_ms=1000, # Overall duration for the preview event
                 master_volume=master_vol,
                 master_mute=master_mute_status,
-                soloed_osc_idx=current_solo_idx
+                soloed_osc_idx=current_solo_idx,
+                bpm=current_bpm
             )
             
             if samples.size == 0:
@@ -814,14 +1011,16 @@ class ChordGeneratorApp:
             master_vol = self.master_volume_var.get()
             
             current_solo_idx_export = -1 
+            current_bpm = self.sequencer_ui_instance.sequencer.bpm if self.sequencer_ui_instance else 120
 
             samples = self.chord_generator.generate_chord(
                 master_octave=self.octave_var.get(),
                 notes_data=current_notes_data,
-                duration_ms=2000,  # 2 seconds for export
+                duration_ms=2000,  # Overall duration for the exported WAV event
                 master_volume=master_vol,
                 master_mute=False, 
-                soloed_osc_idx=current_solo_idx_export
+                soloed_osc_idx=current_solo_idx_export,
+                bpm=current_bpm
             )
             
             if samples.size == 0:
@@ -895,10 +1094,14 @@ class ChordGeneratorApp:
 
     def populate_custom_chord_from_preset(self, chord_type_name: str):
         """Populates self.custom_chord_notes_data based on a selected preset."""
+        # Get the desired default beat length from the main chord duration setting
+        default_beat_length = self.duration_var.get()
+        if default_beat_length <= 0: default_beat_length = 1.0
+
         if not chord_type_name or chord_type_name not in self.chord_generator.chord_definitions:
             # If invalid type, or if it was already custom, perhaps clear or use a default like single root note
             if not self.custom_chord_notes_data: # Only reset if truly empty, to avoid wiping user edits if called unexpectedly
-                 self.custom_chord_notes_data = [{'pitch': self.root_var.get(), 'octave_adjust': 0, 'osc_idx': -1 }]
+                 self.custom_chord_notes_data = [{'pitch': self.root_var.get(), 'octave_adjust': 0, 'osc_idx': -1, 'beat_length': default_beat_length }]
             return
 
         root_note = self.root_var.get()
@@ -906,7 +1109,7 @@ class ChordGeneratorApp:
         self.custom_chord_notes_data = []
         for interval in intervals:
             note_name = self._get_note_name(root_note, interval)
-            self.custom_chord_notes_data.append({'pitch': note_name, 'octave_adjust': 0, 'osc_idx': -1 })
+            self.custom_chord_notes_data.append({'pitch': note_name, 'octave_adjust': 0, 'osc_idx': -1, 'beat_length': default_beat_length })
         # No self.type_var.set("-- Custom --") here; that's for when user *manually* edits.
 
     def update_custom_chord_note_ui(self):
@@ -914,10 +1117,12 @@ class ChordGeneratorApp:
         
         # If canvas and content frame don't exist, create them within self.custom_notes_frame
         if not self.custom_notes_canvas:
-            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=130) # Increased height
+            # This is a tk.Canvas, styled directly
+            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=155, bg=self.DARK_GREY, highlightthickness=0)
             h_scrollbar = ttk.Scrollbar(self.custom_notes_frame, orient=tk.HORIZONTAL, command=self.custom_notes_canvas.xview)
             self.custom_notes_canvas.configure(xscrollcommand=h_scrollbar.set)
             
+            # This ttk.Frame will inherit styles
             self.custom_notes_content_frame = ttk.Frame(self.custom_notes_canvas)
             self.custom_notes_canvas.create_window((0, 0), window=self.custom_notes_content_frame, anchor="nw")
 
@@ -934,6 +1139,7 @@ class ChordGeneratorApp:
         self.note_pitch_vars = []
         self.note_octave_vars = []
         self.note_osc_idx_vars = [] # Clear and repopulate
+        self.note_beat_length_vars = [] # Clear and repopulate
 
         all_note_names = list(ChordGenerator.NOTE_FREQUENCIES.keys())
         # Use oscillator names for the dropdown
@@ -966,45 +1172,57 @@ class ChordGeneratorApp:
             self.note_osc_idx_vars.append(osc_idx_var)
             osc_combo = ttk.Combobox(note_ui_frame, textvariable=osc_idx_var, values=osc_names, width=15, state='readonly')
             
-            # Explicitly define current_assigned_osc_idx for setting the combobox
             current_assigned_osc_idx = note_data.get('osc_idx', -1)
-            
-            # Determine the display name for the combobox
-            display_name_for_combo = "master" # Default
+            display_name_for_combo = "master"
             if current_assigned_osc_idx == -1:
                 display_name_for_combo = "master"
             elif 0 <= current_assigned_osc_idx < len(self.chord_generator.oscillators):
-                display_name_for_combo = self.chord_generator.oscillators[current_assigned_osc_idx].name
+                display_name_for_combo = self.chord_generator.oscillators[current_assigned_idx].name
             else:
-                # If idx is out of bounds (but not -1), it implies inconsistent data.
-                # Set to Master/All and correct the underlying data.
                 display_name_for_combo = "master"
                 if i < len(self.custom_chord_notes_data):
                     self.custom_chord_notes_data[i]['osc_idx'] = -1
             
             osc_combo.set(display_name_for_combo)
-
             osc_combo.pack(side=tk.TOP, pady=1)
             osc_combo.bind('<<ComboboxSelected>>', 
                            lambda e, idx=i, cb=osc_combo: self.on_custom_note_param_change(idx, 'osc_idx', cb.get()))
 
+            # Beat Length Control
+            beat_length_var = tk.DoubleVar(value=note_data.get('beat_length', 1.0))
+            self.note_beat_length_vars.append(beat_length_var)
+            ttk.Label(note_ui_frame, text="Len:").pack(side=tk.TOP, pady=(2,0))
+            beat_length_spin = ttk.Spinbox(note_ui_frame, from_=0.1, to=8.0, increment=0.1, textvariable=beat_length_var, width=4) # Adjusted range/increment
+            beat_length_spin.pack(side=tk.TOP, pady=1)
+            # Using configure for command because Spinbox command doesn't pass the value directly in all tk versions easily
+            beat_length_spin.configure(command=lambda v=beat_length_var, idx=i: self.on_custom_note_param_change(idx, 'beat_length', v.get()))
+            # Bind FocusOut and Return to ensure value is captured if not changed by arrow keys/command
+            beat_length_spin.bind('<FocusOut>', lambda e, v=beat_length_var, idx=i: self.on_custom_note_param_change(idx, 'beat_length', v.get()))
+            beat_length_spin.bind('<Return>', lambda e, v=beat_length_var, idx=i: self.on_custom_note_param_change(idx, 'beat_length', v.get()))
+
             remove_btn = ttk.Button(note_ui_frame, text="X", width=2, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
-            remove_btn.pack(side=tk.TOP, pady=1)
+            remove_btn.pack(side=tk.TOP, pady=(3,1)) # Added some padding
         
         self.custom_notes_content_frame.update_idletasks()
         self.custom_notes_canvas.configure(scrollregion=self.custom_notes_canvas.bbox("all"))
 
     def on_custom_note_param_change(self, note_idx: int, param_type: str, new_value):
-        """Called when a note\'s pitch or octave adjustment is changed in the UI."""
+        """Called when a note's pitch, octave adjustment, oscillator, or beat length is changed in the UI."""
         if note_idx < len(self.custom_chord_notes_data):
             if param_type == 'octave_adjust':
                 try: new_value = int(new_value)
                 except ValueError: return
+            elif param_type == 'beat_length':
+                try: new_value = float(new_value)
+                except ValueError: return
+                if new_value < 0.1: new_value = 0.1 # Basic validation
 
             if param_type == 'pitch':
                 self.custom_chord_notes_data[note_idx]['pitch'] = str(new_value)
             elif param_type == 'octave_adjust':
                  self.custom_chord_notes_data[note_idx]['octave_adjust'] = new_value
+            elif param_type == 'beat_length':
+                 self.custom_chord_notes_data[note_idx]['beat_length'] = new_value
             elif param_type == 'osc_idx':
                 if new_value == "master":
                     self.custom_chord_notes_data[note_idx]['osc_idx'] = -1
@@ -1030,7 +1248,14 @@ class ChordGeneratorApp:
         """Adds a new default note to the custom chord structure and updates UI."""
         new_note_pitch = self.root_var.get() # Default to current root note
         new_note_octave_adjust = 0
-        self.custom_chord_notes_data.append({'pitch': new_note_pitch, 'octave_adjust': new_note_octave_adjust, 'osc_idx': -1 })
+        # Default beat_length to the main duration_var, or 1.0 if not suitable
+        default_beat_length = self.duration_var.get()
+        if default_beat_length <= 0: default_beat_length = 1.0
+
+        self.custom_chord_notes_data.append({'pitch': new_note_pitch, 
+                                            'octave_adjust': new_note_octave_adjust, 
+                                            'osc_idx': -1,
+                                            'beat_length': default_beat_length })
         
         if self.type_var.get() != "-- Custom --":
             self.type_var.set("-- Custom --")
@@ -1223,6 +1448,47 @@ class ChordGeneratorApp:
             # if other parts depend on these definitions directly.
             # For now, just updating the comboboxes.
             # self.update_oscillator_frames_after_rename() # This is too heavy, avoid if possible
+
+    def load_step_into_chord_settings(self, step_data: Dict):
+        """Loads data from a sequencer step into the main chord/note editing UI."""
+        if not isinstance(step_data, dict):
+            print("Error: Invalid step_data format received.")
+            return
+
+        # Set master octave for the chord
+        self.octave_var.set(step_data.get('master_octave', 4))
+        
+        # Set overall duration for the chord step
+        self.duration_var.set(step_data.get('duration', 1.0))
+        
+        # Load notes data into the custom chord section
+        # Ensure we're creating copies of note dicts to avoid direct modification of sequencer data
+        loaded_notes_data = []
+        for note_info in step_data.get('notes_data', []):
+            if isinstance(note_info, dict):
+                # Ensure all necessary keys are present with defaults, similar to _on_sequence_line_click
+                complete_note = {
+                    'pitch': note_info.get('pitch', 'C'),
+                    'octave_adjust': note_info.get('octave_adjust', 0),
+                    'osc_idx': note_info.get('osc_idx', -1),
+                    'beat_length': note_info.get('beat_length', self.duration_var.get() or 1.0)
+                }
+                loaded_notes_data.append(complete_note.copy())
+            else:
+                print(f"Warning: Invalid note_info detected in step_data: {note_info}")
+
+        self.custom_chord_notes_data = loaded_notes_data
+        
+        # Set chord type to "-- Custom --" as we are loading specific notes
+        self.type_var.set("-- Custom --")
+        
+        # Refresh the custom notes UI to display the loaded notes
+        self.update_custom_chord_note_ui()
+        
+        # Optional: Give focus to a relevant widget, e.g., the first note's pitch combobox if notes were loaded.
+        # This might require more access to UI elements within update_custom_chord_note_ui or storing them.
+        # For now, just updating data and UI is sufficient.
+        print(f"Loaded step data into chord settings: Oct:{self.octave_var.get()}, Dur:{self.duration_var.get()}, Notes:{len(self.custom_chord_notes_data)}")
 
 if __name__ == "__main__":
     # Reset Oscillator count when app starts, if desired for consistent default naming like "Oscillator 1", "Oscillator 2" etc.

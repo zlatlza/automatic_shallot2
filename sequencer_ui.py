@@ -61,8 +61,16 @@ class SequencerUI:
         self.master_frame.grid_rowconfigure(1, weight=1) # Allow text_frame to expand
         self.master_frame.grid_columnconfigure(0, weight=1)
 
-        self.sequence_text = tk.Text(text_frame, height=5, width=40, wrap=tk.NONE) # wrap=tk.NONE for horizontal scroll
+        self.sequence_text = tk.Text(text_frame, height=5, width=40, wrap=tk.NONE, 
+                                     bg=self.app.DARK_GREY, 
+                                     fg=self.app.LIGHT_GREY_FG, 
+                                     insertbackground=self.app.WHITE_ISH_TEXT, # Cursor color
+                                     selectbackground=self.app.MEDIUM_GREY, # Selection background
+                                     selectforeground=self.app.WHITE_ISH_TEXT, # Selected text color
+                                     borderwidth=1,
+                                     relief=tk.FLAT) 
         self.sequence_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.sequence_text.bind("<ButtonRelease-1>", self._on_sequence_line_click) # Bind click
 
         v_scrollbar_text = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.sequence_text.yview)
         v_scrollbar_text.pack(side=tk.RIGHT, fill=tk.Y)
@@ -131,7 +139,7 @@ class SequencerUI:
         # Current osc_name_regex: ([\\w\\s\\-]+) - allows words, spaces, hyphens. 
         # If oscillator names can contain brackets or other special characters, this regex for osc_name would need to be more robust.
         # Let's use a version that matches anything inside brackets not being a closing bracket: \[([^]]+)\]
-        note_regex_final = re.compile(r"([A-Ga-g][#b]?)([+-]\d+)\[([^]]+)\]")
+        note_regex_final = re.compile(r"([A-Ga-g][#b]?)([+-]\d+)\[([^]]+)\](?:\s*\{len:([\d.]+)\})?")
 
         valid_pitches = list(self.app.chord_generator.NOTE_FREQUENCIES.keys())
         all_osc_objects = self.app.chord_generator.oscillators
@@ -173,10 +181,10 @@ class SequencerUI:
                     note_match = note_regex_final.match(note_part_str)
                     if not note_match:
                         messagebox.showerror("Parsing Error", 
-                                             f"Line {line_num}, Note entry '{note_part_str}': Invalid format.\nExpected: 'P+/-O[OscName]' (e.g., C+0[osc1] or G#-1[master])")
+                                             f"Line {line_num}, Note entry '{note_part_str}': Invalid format.\nExpected: 'P+/-O[OscName]' or 'P+/-O[OscName]{{len:X.X}}' (e.g., C+0[osc1]{{len:0.5}})")
                         return
                     
-                    pitch_str, octave_adjust_str, osc_name_str = note_match.groups()
+                    pitch_str, octave_adjust_str, osc_name_str, beat_length_str = note_match.groups()
                     
                     try:
                         octave_adjust = int(octave_adjust_str)
@@ -199,7 +207,8 @@ class SequencerUI:
                     assigned_osc_idx = -1 # Default to Master/All
                     osc_name_str_cleaned = osc_name_str.strip()
                     
-                    if osc_name_str_cleaned.lower() == "master/all":
+                    # Check for "master" or "master/all" for all oscillators
+                    if osc_name_str_cleaned.lower() == "master" or osc_name_str_cleaned.lower() == "master/all":
                         assigned_osc_idx = -1
                     else:
                         found_osc = False
@@ -225,11 +234,28 @@ class SequencerUI:
                                 messagebox.showerror("Parsing Error", f"Line {line_num}, Note '{pitch_str}': Oscillator name '{osc_name_str}' not found.")
                                 return
 
-                    parsed_notes_data.append({
+                    current_note_data = {
                         'pitch': canonical_pitch, 
                         'octave_adjust': octave_adjust, 
                         'osc_idx': assigned_osc_idx
-                    })
+                    }
+
+                    if beat_length_str:
+                        try:
+                            beat_len = float(beat_length_str)
+                            if beat_len > 0:
+                                current_note_data['beat_length'] = beat_len
+                            else:
+                                messagebox.showerror("Parsing Error", f"Line {line_num}, Note '{pitch_str}': Beat length must be positive.")
+                                return
+                        except ValueError:
+                            messagebox.showerror("Parsing Error", f"Line {line_num}, Note '{pitch_str}': Invalid beat length format '{beat_length_str}'.")
+                            return
+                    else:
+                        # Default beat length if not specified, can be 1.0 or tied to step duration if needed later
+                        current_note_data['beat_length'] = 1.0 
+
+                    parsed_notes_data.append(current_note_data)
            
             new_sequence_data.append({
                 'master_octave': master_octave,
@@ -263,6 +289,7 @@ class SequencerUI:
                 pitch = note_data['pitch']
                 oct_adj = note_data['octave_adjust']
                 osc_idx = note_data.get('osc_idx', -1) 
+                beat_length = note_data.get('beat_length') # Get beat_length
                 
                 osc_display_name = "master"
                 if 0 <= osc_idx < len(self.app.chord_generator.oscillators):
@@ -272,7 +299,10 @@ class SequencerUI:
                     # The parser will need to handle this gracefully, maybe default to Master/All
                     osc_display_name = f"osc_idx_{osc_idx}(!)_" # Make it distinct for parsing/debugging
                 
-                notes_summary_parts.append(f"{pitch}{oct_adj:+d}[{osc_display_name}]")
+                note_str = f"{pitch}{oct_adj:+d}[{osc_display_name}]"
+                if beat_length is not None and beat_length != 1.0: # Only show if not default 1.0
+                    note_str += f"{{len:{beat_length:.2f}}}" # Using .2f for two decimal places
+                notes_summary_parts.append(note_str)
             
             notes_final_summary = ", ".join(notes_summary_parts) if notes_summary_parts else "(No notes)"
             
@@ -330,7 +360,8 @@ class SequencerUI:
             fade_out_ms=int(crossfade_ms),
             master_volume=master_vol,
             master_mute=master_mute_status,
-            soloed_osc_idx=current_solo_idx
+            soloed_osc_idx=current_solo_idx,
+            bpm=self.sequencer.bpm
         )
         
         if samples.size > 0:
@@ -358,4 +389,54 @@ class SequencerUI:
     def clear_sequence(self):
         self.stop_sequence() # Stop playback before clearing
         self.sequencer.clear_sequence()
-        self.update_sequence_display() 
+        self.update_sequence_display()
+
+    def get_sequence_as_text(self) -> str:
+        """Returns the entire content of the sequence text area."""
+        return self.sequence_text.get("1.0", tk.END)
+
+    def load_sequence_from_text(self, text_content: str):
+        """Clears the sequence text, inserts new content, and applies it."""
+        self.sequence_text.delete("1.0", tk.END)
+        self.sequence_text.insert("1.0", text_content)
+        self._apply_text_to_sequence() # This will parse and update the actual sequence
+
+    def _on_sequence_line_click(self, event):
+        """Handle clicking on a line in the sequence text area to load it into chord settings."""
+        try:
+            index_str = self.sequence_text.index(f"@{event.x},{event.y}")
+            line_number = int(index_str.split('.')[0])
+            step_index = line_number - 1 # Convert to 0-based index
+
+            if 0 <= step_index < len(self.sequencer.sequence):
+                step_data = self.sequencer.sequence[step_index]
+                # Ensure all expected keys are present in each note_data dictionary
+                # This is important if loading older sequences that might not have 'beat_length'
+                # or if a note in the sequence somehow missed a key.
+                notes_data_to_load = []
+                for note in step_data.get('notes_data', []):
+                    # Ensure all essential keys have defaults if missing
+                    # This makes it robust to older formats or slight data inconsistencies.
+                    complete_note = {
+                        'pitch': note.get('pitch', 'C'), # Default to C if somehow missing
+                        'octave_adjust': note.get('octave_adjust', 0),
+                        'osc_idx': note.get('osc_idx', -1),
+                        'beat_length': note.get('beat_length', 1.0) # Default to 1.0 beat
+                    }
+                    notes_data_to_load.append(complete_note)
+                
+                # Create a new step_data dictionary with potentially cleaned notes_data
+                # to pass to the main app.
+                # Also ensure master_octave and duration have defaults if missing from step_data.
+                data_to_load_for_app = {
+                    'master_octave': step_data.get('master_octave', 4),
+                    'duration': step_data.get('duration', 1.0),
+                    'notes_data': notes_data_to_load
+                }
+
+                self.app.load_step_into_chord_settings(data_to_load_for_app)
+            else:
+                print(f"Clicked on line {line_number}, but it does not correspond to a valid sequence step.")
+        except Exception as e:
+            print(f"Error processing sequence line click: {e}")
+            # Optionally, show a user-friendly error or log more formally 
