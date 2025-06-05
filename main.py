@@ -300,11 +300,16 @@ class ChordGeneratorApp:
                         background=self.DARK_GREY, 
                         troughcolor=self.SLIDER_TROUGH_GREY)
         
-        # Try to style the slider thumb itself
-        # The element name for slider thumb can be 'Horizontal.Scale.slider', 'Horizontal.Slider.thumb', etc.
-        # For 'clam', it's often 'Horizontal.Scale.slider' for the visual part.
-        style.configure('Horizontal.Scale.slider', background=self.CRIMSON, bordercolor=self.CRIMSON, lightcolor=self.CRIMSON, darkcolor=self.CRIMSON)
-        style.configure('Vertical.Scale.slider', background=self.CRIMSON, bordercolor=self.CRIMSON, lightcolor=self.CRIMSON, darkcolor=self.CRIMSON)
+        # Custom styles for TScale widgets, attempting to make thumbs smaller via widget style options
+        style.configure('SmallThumb.Horizontal.TScale', sliderlength=12, sliderthickness=12, troughcolor=self.SLIDER_TROUGH_GREY, background=self.DARK_GREY)
+        style.configure('SmallThumb.Vertical.TScale', sliderlength=12, sliderthickness=10, troughcolor=self.SLIDER_TROUGH_GREY, background=self.DARK_GREY)
+        # Note: The 'background' for SmallThumb.*.TScale is the widget background, not thumb.
+        # Troughcolor is also for the widget. Color of the thumb itself is handled below.
+
+        # Style the slider thumb *element* - primarily for color.
+        # Size changes (sliderlength/thickness) proved ineffective when applied directly to the element, so removed from here.
+        style.configure('Horizontal.TScale.slider', background=self.CRIMSON, bordercolor=self.CRIMSON, lightcolor=self.CRIMSON, darkcolor=self.CRIMSON)
+        style.configure('Vertical.TScale.slider', background=self.CRIMSON, bordercolor=self.CRIMSON, lightcolor=self.CRIMSON, darkcolor=self.CRIMSON)
         
         # Scrollbar styling
         style.configure("TScrollbar", 
@@ -374,6 +379,9 @@ class ChordGeneratorApp:
         file_menu.add_separator()
         file_menu.add_command(label="Import Sequence...", command=self._import_sequence_dialog)
         file_menu.add_command(label="Export Sequence...", command=self._export_sequence_dialog)
+        file_menu.add_separator()
+        file_menu.add_command(label="Import Oscillator Rack...", command=self.import_oscillator_rack)
+        file_menu.add_command(label="Export Oscillator Rack...", command=self.export_oscillator_rack)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
         
@@ -522,7 +530,7 @@ class ChordGeneratorApp:
         ttk.Label(master_output_frame, text="Vol:").grid(row=0, column=0, padx=(2,1), pady=1, sticky="w")
         master_vol_scale = ttk.Scale(master_output_frame, from_=0, to=1, 
                                      variable=self.master_volume_var, 
-                                     orient=tk.HORIZONTAL, length=70)
+                                     orient=tk.HORIZONTAL, length=100, style='SmallThumb.Horizontal.TScale')
         master_vol_scale.grid(row=0, column=1, padx=1, pady=1, sticky="ew")
 
         master_mute_cb = ttk.Checkbutton(master_output_frame, text="Mute", 
@@ -561,19 +569,20 @@ class ChordGeneratorApp:
         # Right side - Chord and Sequencer Controls
         right_frame = ttk.Frame(self.main_frame)
         right_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
+        right_frame.grid_columnconfigure(0, weight=1) # Allow chord_frame's column to expand for centering
         right_frame.grid_rowconfigure(0, weight=0) # Chord frame, fixed size initially
         right_frame.grid_rowconfigure(1, weight=1) # Sequencer UI frame, takes remaining space
 
         # Chord Controls
         chord_frame = self.create_chord_frame(right_frame)
-        chord_frame.grid(row=0, column=0, sticky="new", padx=5, pady=5) # Changed to new, removed ew
+        chord_frame.grid(row=0, column=0, sticky="n", padx=5, pady=5) # Changed sticky to "n" for centering
         
         # Sequencer UI - Instantiate SequencerUI here
         # The SequencerUI will build its components into a frame it creates inside right_frame
         # Or, we can pass a specific sub-frame of right_frame for it to populate.
         # Let's create a container for SequencerUI within right_frame.
         sequencer_ui_container = ttk.Frame(right_frame)
-        sequencer_ui_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        sequencer_ui_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=(15, 5)) # Increased top padding
         self.sequencer_ui_instance = SequencerUI(sequencer_ui_container, self)
     
     def create_oscillator_frame(self, parent, index):
@@ -581,8 +590,8 @@ class ChordGeneratorApp:
         osc = self.chord_generator.oscillators[index]
         osc_frame = ttk.LabelFrame(parent, text=osc.name, padding="1")
         osc_frame.grid(row=index, column=0, sticky="ew", padx=1, pady=1)
-        osc_frame.grid_columnconfigure(1, weight=1) 
-        osc_frame.grid_columnconfigure(0, weight=1) 
+        osc_frame.grid_columnconfigure(0, weight=1) # Main content column will expand
+        osc_frame.grid_columnconfigure(1, weight=0) # Column for remove button, no expansion
 
         # Initialize UI elements dictionary for this oscillator if it doesn't exist
         if index not in self.oscillator_ui_elements:
@@ -597,7 +606,7 @@ class ChordGeneratorApp:
         self.create_waveform_preview(osc_frame, index, base_row=0) 
         
         basic_frame = ttk.Frame(osc_frame)
-        basic_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=0)
+        basic_frame.grid(row=1, column=0, columnspan=1, sticky="n", pady=0) # Centered in column 0
         
         enable_cb = ttk.Checkbutton(basic_frame, text="On",
                                   variable=self.enabled_vars[index],
@@ -626,17 +635,17 @@ class ChordGeneratorApp:
         ttk.Label(basic_frame, text="Amp:").grid(row=0, column=4, padx=(2,0))
         amp_scale = ttk.Scale(basic_frame, from_=0, to=1,
                              variable=self.amp_vars[index],
-                             orient=tk.HORIZONTAL, length=50)
+                             orient=tk.HORIZONTAL, length=40, style='SmallThumb.Horizontal.TScale')
         amp_scale.grid(row=0, column=5, padx=(0,1))
         
         ttk.Label(basic_frame, text="Det:").grid(row=0, column=6, padx=(2,0))
         detune_scale = ttk.Scale(basic_frame, from_=-100, to=100,
                                 variable=self.detune_vars[index],
-                                orient=tk.HORIZONTAL, length=50)
+                                orient=tk.HORIZONTAL, length=40, style='SmallThumb.Horizontal.TScale')
         detune_scale.grid(row=0, column=7, padx=(0,1))
         
         adsr_frame = ttk.LabelFrame(osc_frame, text="ADSR", padding="1")
-        adsr_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=0)
+        adsr_frame.grid(row=2, column=0, columnspan=1, sticky="n", pady=0) # Centered in column 0
         
         adsr_labels = ['A', 'D', 'S', 'R']
         adsr_vars = [self.attack_vars[index], self.decay_vars[index],
@@ -645,29 +654,29 @@ class ChordGeneratorApp:
         for i, (label, var) in enumerate(zip(adsr_labels, adsr_vars)):
             ttk.Label(adsr_frame, text=label).grid(row=0, column=i*2, padx=0)
             ttk.Scale(adsr_frame, from_=0, to=2 if label != 'S' else 1,
-                     variable=var, orient=tk.HORIZONTAL, length=35).grid(row=0, column=i*2+1, padx=(0,1))
+                     variable=var, orient=tk.HORIZONTAL, length=25, style='SmallThumb.Horizontal.TScale').grid(row=0, column=i*2+1, padx=(0,1))
         
         filter_frame = ttk.Frame(osc_frame)
-        filter_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=0)
+        filter_frame.grid(row=3, column=0, columnspan=1, sticky="n", pady=0) # Centered in column 0
         
         ttk.Label(filter_frame, text="Cut:").grid(row=0, column=0, padx=(1,0))
         ttk.Scale(filter_frame, from_=0, to=1,
                  variable=self.cutoff_vars[index],
-                 orient=tk.HORIZONTAL, length=50).grid(row=0, column=1, padx=(0,1))
+                 orient=tk.HORIZONTAL, length=40, style='SmallThumb.Horizontal.TScale').grid(row=0, column=1, padx=(0,1))
         
         ttk.Label(filter_frame, text="Res:").grid(row=0, column=2, padx=(2,0))
         ttk.Scale(filter_frame, from_=0, to=1,
                  variable=self.resonance_vars[index],
-                 orient=tk.HORIZONTAL, length=50).grid(row=0, column=3, padx=(0,1))
+                 orient=tk.HORIZONTAL, length=40, style='SmallThumb.Horizontal.TScale').grid(row=0, column=3, padx=(0,1))
         
         ttk.Label(filter_frame, text="Pan:").grid(row=0, column=4, padx=(2,0))
         ttk.Scale(filter_frame, from_=0, to=1,
                  variable=self.pan_vars[index],
-                 orient=tk.HORIZONTAL, length=50).grid(row=0, column=5, padx=(0,1))
+                 orient=tk.HORIZONTAL, length=40, style='SmallThumb.Horizontal.TScale').grid(row=0, column=5, padx=(0,1))
         
         # EQ Controls Frame
         eq_frame = ttk.LabelFrame(osc_frame, text="EQ", padding="1")
-        eq_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=0)
+        eq_frame.grid(row=4, column=0, columnspan=1, sticky="n", pady=0) # Centered in column 0
         for i in range(8):
             eq_band_label = f"{Oscillator.EQ_BAND_FREQUENCIES[i]}" # Hz
             if Oscillator.EQ_BAND_FREQUENCIES[i] >= 1000:
@@ -676,7 +685,7 @@ class ChordGeneratorApp:
             ttk.Label(eq_frame, text=eq_band_label, width=3, anchor="center").grid(row=0, column=i, padx=1)
             eq_scale = ttk.Scale(eq_frame, from_=-12, to=12, 
                                  variable=self.eq_gain_vars[index][i],
-                                 orient=tk.VERTICAL, length=50)
+                                 orient=tk.VERTICAL, length=60, style='SmallThumb.Vertical.TScale')
             eq_scale.grid(row=1, column=i, padx=1, pady=(0,1))
             # Add a label for 0dB mark, might need better placement or a custom widget later
             # ttk.Label(eq_frame, text="0", font=("TkSmallCaptionFont",)).grid(row=2, column=i, sticky="n")
@@ -708,7 +717,7 @@ class ChordGeneratorApp:
         canvas_widget = canvas.get_tk_widget()
         # Set background of the Tkinter widget holding the Matplotlib canvas
         canvas_widget.config(bg=self.DARK_GREY, highlightthickness=0) 
-        canvas_widget.grid(row=base_row, column=0, columnspan=1, padx=1, pady=0, sticky="ew")
+        canvas_widget.grid(row=base_row, column=0, columnspan=1, padx=1, pady=0, sticky="n") # Centered in column 0 of parent (osc_frame)
         # Bind click to open sculptor
         canvas_widget.bind("<Button-1>", lambda event, i=index: self.open_waveform_sculptor(oscillator_index=i))
         
@@ -1118,7 +1127,7 @@ class ChordGeneratorApp:
         # If canvas and content frame don't exist, create them within self.custom_notes_frame
         if not self.custom_notes_canvas:
             # This is a tk.Canvas, styled directly
-            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=155, bg=self.DARK_GREY, highlightthickness=0)
+            self.custom_notes_canvas = tk.Canvas(self.custom_notes_frame, height=150, bg=self.DARK_GREY, highlightthickness=0) # Increased height to 150
             h_scrollbar = ttk.Scrollbar(self.custom_notes_frame, orient=tk.HORIZONTAL, command=self.custom_notes_canvas.xview)
             self.custom_notes_canvas.configure(xscrollcommand=h_scrollbar.set)
             
@@ -1151,19 +1160,30 @@ class ChordGeneratorApp:
             self.custom_chord_notes_ui_frames.append(note_ui_frame)
             note_ui_frame.pack(side=tk.LEFT, padx=2, pady=1, fill=tk.Y)
 
-            ttk.Label(note_ui_frame, text=f"N{i+1}").pack(side=tk.TOP, pady=(0,1))
+            # Configure grid for the note_ui_frame
+            note_ui_frame.grid_columnconfigure(0, weight=0) # Main controls column
+            note_ui_frame.grid_columnconfigure(1, weight=0) # Column for X button
+            # note_ui_frame.grid_rowconfigure(0, weight=0) # Row for label and X button
+            # ... potentially configure other rows if needed for spacing ...
+
+            # Note Number Label (Top-Left)
+            ttk.Label(note_ui_frame, text=f"N{i+1}").grid(row=0, column=0, sticky="nw", pady=(0,1))
             
+            # Remove Button (Top-Right)
+            remove_btn = ttk.Button(note_ui_frame, text="X", width=2, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
+            remove_btn.grid(row=0, column=1, sticky="ne", padx=(2,0), pady=(0,1)) 
+
             pitch_var = tk.StringVar(value=note_data['pitch'])
             self.note_pitch_vars.append(pitch_var)
             pitch_combo = ttk.Combobox(note_ui_frame, textvariable=pitch_var, values=all_note_names, width=3)
-            pitch_combo.pack(side=tk.TOP, pady=1)
+            pitch_combo.grid(row=1, column=0, columnspan=2, pady=1, sticky="ew") # Span across both columns for width
             pitch_combo.bind('<<ComboboxSelected>>', lambda e, idx=i, pv=pitch_var: self.on_custom_note_param_change(idx, 'pitch', pv.get()))
             pitch_combo.bind('<FocusOut>', lambda e, idx=i, pv=pitch_var: self.on_custom_note_param_change(idx, 'pitch', pv.get()))
 
             octave_var = tk.IntVar(value=note_data['octave_adjust'])
             self.note_octave_vars.append(octave_var)
             octave_spin = ttk.Spinbox(note_ui_frame, from_=-3, to=3, increment=1, textvariable=octave_var, width=2)
-            octave_spin.pack(side=tk.TOP, pady=1)
+            octave_spin.grid(row=2, column=0, columnspan=2, pady=1, sticky="ew") # Span
             octave_spin.configure(command=lambda v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
             octave_spin.bind('<FocusOut>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
             octave_spin.bind('<Return>', lambda e, v=octave_var, idx=i: self.on_custom_note_param_change(idx, 'octave_adjust', v.get()))
@@ -1177,31 +1197,30 @@ class ChordGeneratorApp:
             if current_assigned_osc_idx == -1:
                 display_name_for_combo = "master"
             elif 0 <= current_assigned_osc_idx < len(self.chord_generator.oscillators):
-                display_name_for_combo = self.chord_generator.oscillators[current_assigned_idx].name
+                display_name_for_combo = self.chord_generator.oscillators[current_assigned_osc_idx].name
             else:
                 display_name_for_combo = "master"
                 if i < len(self.custom_chord_notes_data):
                     self.custom_chord_notes_data[i]['osc_idx'] = -1
             
             osc_combo.set(display_name_for_combo)
-            osc_combo.pack(side=tk.TOP, pady=1)
+            osc_combo.grid(row=3, column=0, columnspan=2, pady=1, sticky="ew") # Span
             osc_combo.bind('<<ComboboxSelected>>', 
                            lambda e, idx=i, cb=osc_combo: self.on_custom_note_param_change(idx, 'osc_idx', cb.get()))
 
             # Beat Length Control
             beat_length_var = tk.DoubleVar(value=note_data.get('beat_length', 1.0))
             self.note_beat_length_vars.append(beat_length_var)
-            ttk.Label(note_ui_frame, text="Len:").pack(side=tk.TOP, pady=(2,0))
+            ttk.Label(note_ui_frame, text="Len:").grid(row=4, column=0, columnspan=2, pady=(2,0), sticky="w") # Span, sticky w
             beat_length_spin = ttk.Spinbox(note_ui_frame, from_=0.1, to=8.0, increment=0.1, textvariable=beat_length_var, width=4) # Adjusted range/increment
-            beat_length_spin.pack(side=tk.TOP, pady=1)
+            beat_length_spin.grid(row=5, column=0, columnspan=2, pady=1, sticky="ew") # Span
             # Using configure for command because Spinbox command doesn't pass the value directly in all tk versions easily
             beat_length_spin.configure(command=lambda v=beat_length_var, idx=i: self.on_custom_note_param_change(idx, 'beat_length', v.get()))
             # Bind FocusOut and Return to ensure value is captured if not changed by arrow keys/command
             beat_length_spin.bind('<FocusOut>', lambda e, v=beat_length_var, idx=i: self.on_custom_note_param_change(idx, 'beat_length', v.get()))
             beat_length_spin.bind('<Return>', lambda e, v=beat_length_var, idx=i: self.on_custom_note_param_change(idx, 'beat_length', v.get()))
 
-            remove_btn = ttk.Button(note_ui_frame, text="X", width=2, command=lambda idx=i: self.remove_note_from_custom_chord(idx))
-            remove_btn.pack(side=tk.TOP, pady=(3,1)) # Added some padding
+            # The remove_btn is already gridded at the top (row=0, column=1)
         
         self.custom_notes_content_frame.update_idletasks()
         self.custom_notes_canvas.configure(scrollregion=self.custom_notes_canvas.bbox("all"))
@@ -1489,6 +1508,141 @@ class ChordGeneratorApp:
         # This might require more access to UI elements within update_custom_chord_note_ui or storing them.
         # For now, just updating data and UI is sufficient.
         print(f"Loaded step data into chord settings: Oct:{self.octave_var.get()}, Dur:{self.duration_var.get()}, Notes:{len(self.custom_chord_notes_data)}")
+
+    def export_oscillator_rack(self):
+        """Exports all current oscillator settings to a .shallotrack JSON file."""
+        all_oscillators_data = []
+        for index, osc_object in enumerate(self.chord_generator.oscillators):
+            osc_data = {
+                'name': osc_object.name,
+                'enabled': self.enabled_vars[index].get(),
+                'waveform_selection': self.wave_vars[index].get(),
+                'is_live_editing': osc_object.is_live_editing,
+                'live_edit_points': osc_object.live_edit_points if osc_object.is_live_editing else [],
+                'amplitude': self.amp_vars[index].get(),
+                'detune': self.detune_vars[index].get(),
+                'attack': self.attack_vars[index].get(),
+                'decay': self.decay_vars[index].get(),
+                'sustain': self.sustain_vars[index].get(),
+                'release': self.release_vars[index].get(),
+                'filter_cutoff': self.cutoff_vars[index].get(),
+                'filter_resonance': self.resonance_vars[index].get(),
+                'pan': self.pan_vars[index].get(),
+                'eq_gains': [var.get() for var in self.eq_gain_vars[index]]
+            }
+            all_oscillators_data.append(osc_data)
+
+        if not all_oscillators_data:
+            messagebox.showwarning("Export Rack", "No oscillators to export.")
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".shallotrack",
+            filetypes=[("Shallot Rack Files", "*.shallotrack"), ("All Files", "*.*")],
+            title="Export Oscillator Rack"
+        )
+        if not filepath:
+            return # User cancelled
+
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(all_oscillators_data, f, indent=4)
+            messagebox.showinfo("Export Successful", f"Oscillator rack exported to\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export oscillator rack.\nError: {e}")
+
+    def import_oscillator_rack(self):
+        """Imports oscillator settings from a .shallotrack JSON file, replacing the current rack."""
+        filepath = filedialog.askopenfilename(
+            defaultextension=".shallotrack",
+            filetypes=[("Shallot Rack Files", "*.shallotrack"), ("All Files", "*.*")],
+            title="Import Oscillator Rack"
+        )
+        if not filepath:
+            return # User cancelled
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                loaded_oscillators_data = json.load(f)
+            
+            if not isinstance(loaded_oscillators_data, list):
+                raise ValueError("Invalid file format: expected a list of oscillators.")
+
+            # Clear existing oscillators and their UI/data
+            for widget in self.oscillator_frame.winfo_children():
+                widget.destroy()
+            
+            self.chord_generator.oscillators = []
+            self.wave_vars = []
+            self.amp_vars = []
+            self.detune_vars = []
+            self.attack_vars = []
+            self.decay_vars = []
+            self.sustain_vars = []
+            self.release_vars = []
+            self.cutoff_vars = []
+            self.resonance_vars = []
+            self.pan_vars = []
+            self.enabled_vars = []
+            self.solo_vars = [] # Reset solo states as well
+            self.eq_gain_vars = []
+            self.waveform_plots = {}
+            self.waveform_canvases = {}
+            self.oscillator_ui_elements = {}
+
+            if not loaded_oscillators_data: # If the file was empty or contained an empty list
+                # Add a default oscillator to not leave the UI empty
+                self.add_oscillator() # This will call init_osc_controls, create_frame, update_preview
+                messagebox.showinfo("Import Info", "Imported rack was empty. Reset to one default oscillator.")
+                self.update_custom_chord_note_ui() # Refresh osc names in note dropdowns
+                return
+
+            # Populate with imported oscillators
+            for osc_idx, osc_data in enumerate(loaded_oscillators_data):
+                new_internal_idx = self.chord_generator.add_oscillator() # Creates Oscillator object
+                self.init_oscillator_controls(new_internal_idx) # Creates tk.Vars for it
+
+                osc_object = self.chord_generator.oscillators[new_internal_idx]
+                
+                # Set name on object first for UI frame title
+                osc_object.name = osc_data.get('name', f"osc{new_internal_idx + 1}")
+
+                # Set tk.Vars from loaded data
+                self.enabled_vars[new_internal_idx].set(osc_data.get('enabled', True))
+                self.wave_vars[new_internal_idx].set(osc_data.get('waveform_selection', 'sine'))
+                self.amp_vars[new_internal_idx].set(osc_data.get('amplitude', 0.7))
+                self.detune_vars[new_internal_idx].set(osc_data.get('detune', 0.0))
+                self.attack_vars[new_internal_idx].set(osc_data.get('attack', 0.01))
+                self.decay_vars[new_internal_idx].set(osc_data.get('decay', 0.1))
+                self.sustain_vars[new_internal_idx].set(osc_data.get('sustain', 0.8))
+                self.release_vars[new_internal_idx].set(osc_data.get('release', 0.2))
+                self.cutoff_vars[new_internal_idx].set(osc_data.get('filter_cutoff', 1.0))
+                self.resonance_vars[new_internal_idx].set(osc_data.get('filter_resonance', 0.0))
+                self.pan_vars[new_internal_idx].set(osc_data.get('pan', 0.5))
+                
+                eq_gains_data = osc_data.get('eq_gains', [0.0] * 8)
+                for band_idx, gain_val in enumerate(eq_gains_data):
+                    if band_idx < len(self.eq_gain_vars[new_internal_idx]):
+                        self.eq_gain_vars[new_internal_idx][band_idx].set(gain_val)
+                
+                # Set live editing state and points directly on the oscillator object
+                is_live = osc_data.get('is_live_editing', False)
+                live_points = osc_data.get('live_edit_points', [])
+                osc_object.set_live_edit_data(points=live_points if is_live else None, is_active=is_live)
+
+                # Apply tk.Var values to the oscillator object's attributes
+                self.update_oscillator(new_internal_idx) # This also calls update_waveform_preview
+
+            # Rebuild all UI frames for oscillators
+            self.update_oscillator_frames_after_rename() 
+            self.update_custom_chord_note_ui() # Refresh osc names in note dropdowns
+
+            messagebox.showinfo("Import Successful", f"Oscillator rack imported from\n{filepath}")
+
+        except ValueError as ve:
+             messagebox.showerror("Import Error", f"Invalid file content in {filepath}.\nError: {ve}")
+        except Exception as e:
+            messagebox.showerror("Import Error", f"Failed to import oscillator rack from {filepath}.\nError: {e}")
 
 if __name__ == "__main__":
     # Reset Oscillator count when app starts, if desired for consistent default naming like "Oscillator 1", "Oscillator 2" etc.

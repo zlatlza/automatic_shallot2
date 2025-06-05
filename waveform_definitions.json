@@ -538,5 +538,50 @@
             -0.7071067811865477,
             -0.3857142857142857
         ]
+    },
+    "GlitchStutter": {
+        "type": "custom",
+        "description": "A wave that attempts a ramp but stutters and resets unexpectedly.",
+        "points": [0.0, 0.1, 0.2, 0.0, -0.2, -0.1, 0.3, 0.4, 0.0, -0.4, -0.3, 0.5, 0.6, -0.5, 0.2, 0.0]
+    },
+    "BuzzyAsymmetric": {
+        "type": "custom",
+        "description": "An asymmetric wave with a sharp peak and a noisy, flat valley.",
+        "points": [0.0, 0.8, 0.2, -0.1, -0.1, 0.1, -0.2, 0.7, 0.3, -0.1, -0.1, 0.0, -0.1, 0.5, 0.1, -0.1]
+    },
+    "RandomSteps": {
+        "type": "custom",
+        "description": "A series of somewhat random steps, creating a staircase-like, unpredictable sound.",
+        "points": [0.2, 0.2, -0.3, -0.3, 0.5, 0.5, 0.1, 0.1, -0.6, -0.6, 0.8, 0.8, -0.2, -0.2, 0.4, 0.4]
+    },
+    "GentleTrapezoid": {
+        "type": "custom",
+        "description": "Softer than a square, warmer than a triangle, with sloped sides.",
+        "points": [0.0, 0.5, 0.8, 0.8, 0.8, 0.5, 0.0, -0.5, -0.8, -0.8, -0.8, -0.5, 0.0, 0.3, 0.6, 0.6]
+    },
+    "SoftenedSaw": {
+        "type": "custom",
+        "description": "A sawtooth wave with its sharp edges slightly rounded for warmth.",
+        "points": [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 0.9, 0.6, 0.3, 0.0, -0.3, -0.6, -0.8, -0.9]
+    },
+    "WarmPulse": {
+        "type": "custom",
+        "description": "A pulse wave with smoother transitions, giving a less harsh, warmer tone.",
+        "points": [0.8, 0.8, 0.8, 0.6, 0.2, -0.2, -0.6, -0.8, -0.8, -0.8, -0.8, -0.6, -0.2, 0.2, 0.6, 0.8]
+    },
+    "CrystalBell": {
+        "type": "custom",
+        "description": "A clear, bright waveform, reminiscent of a crystal glass or a soft bell.",
+        "points": [0.0, 0.5, 0.85, 0.9, 0.7, 0.3, -0.2, -0.6, -0.8, -0.7, -0.4, 0.0, 0.4, 0.7, 0.8, 0.4]
+    },
+    "AngelicSine": {
+        "type": "custom",
+        "description": "A very smooth sine-like wave with a hint of upper sparkle.",
+        "points": [0.0, 0.38, 0.71, 0.92, 1.0, 0.92, 0.71, 0.38, 0.0, -0.38, -0.71, -0.92, -1.0, -0.92, -0.71, -0.38]
+    },
+    "EtherealPad": {
+        "type": "custom",
+        "description": "A soft, evolving waveform perfect for pad-like sounds, with a gentle swell.",
+        "points": [0.0, 0.2, 0.5, 0.75, 0.9, 0.8, 0.6, 0.3, 0.0, -0.2, -0.5, -0.75, -0.9, -0.8, -0.6, -0.3]
     }
 }

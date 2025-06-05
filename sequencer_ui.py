@@ -62,8 +62,8 @@ class SequencerUI:
         self.master_frame.grid_columnconfigure(0, weight=1)
 
         self.sequence_text = tk.Text(text_frame, height=5, width=40, wrap=tk.NONE, 
-                                     bg=self.app.DARK_GREY, 
-                                     fg=self.app.LIGHT_GREY_FG, 
+                                     bg='black', 
+                                     fg='lime green', 
                                      insertbackground=self.app.WHITE_ISH_TEXT, # Cursor color
                                      selectbackground=self.app.MEDIUM_GREY, # Selection background
                                      selectforeground=self.app.WHITE_ISH_TEXT, # Selected text color
@@ -390,16 +390,6 @@ class SequencerUI:
         self.stop_sequence() # Stop playback before clearing
         self.sequencer.clear_sequence()
         self.update_sequence_display()
-
-    def get_sequence_as_text(self) -> str:
-        """Returns the entire content of the sequence text area."""
-        return self.sequence_text.get("1.0", tk.END)
-
-    def load_sequence_from_text(self, text_content: str):
-        """Clears the sequence text, inserts new content, and applies it."""
-        self.sequence_text.delete("1.0", tk.END)
-        self.sequence_text.insert("1.0", text_content)
-        self._apply_text_to_sequence() # This will parse and update the actual sequence
 
     def _on_sequence_line_click(self, event):
         """Handle clicking on a line in the sequence text area to load it into chord settings."""
